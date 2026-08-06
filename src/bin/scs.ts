@@ -10,6 +10,10 @@ import { search, findSimilar, type SearchMode } from '../store/search.js'
 import { gc } from '../store/chunks.js'
 import { formatHits } from '../mcp/format.js'
 import { evaluate, formatResults, loadGolden } from '../eval/run.js'
+import { measureDepth, formatDepth } from '../eval/depth.js'
+import { exportChunks, importChunks } from '../store/transfer.js'
+import { indexHistory } from '../indexer/history.js'
+import { loadChains, measureCollapse, formatCollapse } from '../eval/collapse.js'
 
 const program = new Command()
 program.name('scs').description('Семантический поиск по коду').version('0.1.0')
@@ -154,6 +158,77 @@ program
     const results = []
     for (const mode of modes) results.push(await evaluate(name, golden, mode))
     console.log(formatResults(results, golden.length))
+  })
+
+program
+  .command('depth <repo>')
+  .description('ранг ожидаемого ответа в векторной выдаче: провал полноты или ранжирования')
+  .option('--golden <path>', 'файл .jsonl с запросами', '')
+  .option('--depth <n>', 'до какой глубины искать ответ', '300')
+  .action(async (name: string, opts: { golden: string; depth: string }) => {
+    const golden = loadGolden(opts.golden || `src/eval/golden.${name}.jsonl`)
+    const depth = Number(opts.depth)
+    console.log(formatDepth([await measureDepth(name, golden, depth)], depth))
+  })
+
+program
+  .command('collapse <repo>')
+  .description('сколько вызовов инструментов заменяет один search_code (цепочки из транскриптов)')
+  .option('--chains <path>', 'файл .jsonl с цепочками', '')
+  .option('-k, --top <n>', 'глубина, на которой считаем цепочку схлопнувшейся', '5')
+  .action(async (name: string, opts: { chains: string; top: string }) => {
+    const chains = loadChains(opts.chains || `src/eval/chains.${name}.jsonl`)
+    const k = Number(opts.top)
+    console.log(formatCollapse(await measureCollapse(name, chains, k), k))
+  })
+
+program
+  .command('history <repo>')
+  .description('проиндексировать удалённые файлы из истории git (отдельный режим)')
+  .option('--depth <n>', 'сколько коммитов истории просматривать', '500')
+  .action(async (name: string, opts: { depth: string }) => {
+    const r = await indexHistory(findRepo(loadConfig(), name), {
+      depth: Number(opts.depth),
+      onProgress: (done, total, path) => {
+        if (done % 10 === 0 || done === total) {
+          process.stderr.write(`\r  ${done}/${total}  ${path.slice(-60).padEnd(60)}`)
+        }
+      },
+    })
+    process.stderr.write('\r'.padEnd(80) + '\r')
+    console.log(
+      [
+        `удалённых файлов найдено: ${r.candidates}`,
+        `проиндексировано: ${r.indexed}, пропущено: ${r.skipped}`,
+        `чанков: ${r.chunks} (векторов ${r.embedded}, переиспользовано ${r.reused})`,
+        `время: ${(r.ms / 1000).toFixed(1)} с`,
+        `Найденное помечается префиксом @deleted/ и понижается в ранжировании.`,
+      ].join('\n'),
+    )
+  })
+
+program
+  .command('export <file>')
+  .description('выгрузить посчитанные вектора для переноса на другую машину')
+  .option('--repo <name>', 'только чанки этого репозитория')
+  .option('--model <id>', 'только этой модели')
+  .action(async (file: string, opts: { repo?: string; model?: string }) => {
+    const s = await exportChunks(file, { repo: opts.repo, model: opts.model })
+    console.log(
+      `Выгружено чанков: ${s.chunks}, ${(s.bytes / 1024 / 1024).toFixed(1)} МБ, ` +
+        `${(s.ms / 1000).toFixed(1)} с\nЛокации там не нужны: на новой машине их пересоберёт scs index.`,
+    )
+  })
+
+program
+  .command('import <file>')
+  .description('загрузить вектора, посчитанные на другой машине')
+  .action(async (file: string) => {
+    const s = await importChunks(file)
+    console.log(
+      `Загружено новых: ${s.chunks}, уже было: ${s.skipped}, ${(s.ms / 1000).toFixed(1)} с\n` +
+        `Дальше: scs index <repo> — он соберёт локации и не пересчитает ни одного вектора.`,
+    )
   })
 
 program

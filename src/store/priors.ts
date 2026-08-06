@@ -32,6 +32,20 @@ export function compilePriors(cfg: Config): CompiledPriors {
       // Карточка файла отвечает на «какой модуль про X», а не на «как это сделано».
       if (hit.kind === 'file_card') factor *= cfg.search.fileCardPrior
 
+      // Безымянный промежуток между объявлениями: у ответа на осмысленный вопрос
+      // обычно есть имя.
+      if (!hit.symbol && (hit.kind === 'binding' || hit.kind === 'preamble')) {
+        factor *= cfg.search.unnamedPrior
+      }
+
+      // Удалённый код из истории: отвечает на «где это было до рефакторинга»,
+      // но живой код на тот же вопрос отвечает лучше.
+      if (hit.path.startsWith('@deleted/')) factor *= cfg.search.deletedPrior
+
+      // Документация. Понижается, но не выключается: на вопросы «как это устроено
+      // вообще» она отвечает лучше кода, и ради них её и индексируют.
+      if (hit.lang === 'markdown' || hit.lang === 'mdx') factor *= cfg.search.docPrior
+
       for (const m of matchers) {
         if (m.match(hit.path)) factor *= m.factor
       }

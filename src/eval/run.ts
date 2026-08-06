@@ -46,6 +46,10 @@ function hitKey(h: SearchHit): string[] {
     // Слитые чанки несут несколько символов через запятую.
     for (const s of h.symbol.split(',')) keys.push(`${h.path}::${s.trim()}`)
   }
+  // Класс, не влезший в maxTokens, чанкуется по методам: его имя оказывается
+  // в parentChain, а не в symbol. Найти метод такого класса — значит найти класс,
+  // иначе набор наказывает нас за размер файла, а не за качество поиска.
+  for (const parent of h.parentChain) keys.push(`${h.path}::${parent}`)
   return keys
 }
 
@@ -63,6 +67,7 @@ export async function evaluate(
   golden: GoldenEntry[],
   mode: SearchMode,
   k = 10,
+  rerank?: boolean,
 ): Promise<ModeResult> {
   let hit1 = 0
   let hit5 = 0
@@ -73,7 +78,7 @@ export async function evaluate(
 
   for (const entry of golden) {
     const t0 = Date.now()
-    const hits = await search({ repo, query: entry.q, k, mode, maxPerFile: 99 })
+    const hits = await search({ repo, query: entry.q, k, mode, maxPerFile: 99, rerank })
     times.push(Date.now() - t0)
 
     const rank = rankOfFirstHit(hits, entry.expect)

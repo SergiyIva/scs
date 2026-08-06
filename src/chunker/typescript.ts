@@ -96,13 +96,21 @@ function isComponent(symbol: string | null, kind: ts.ScriptKind): boolean {
   return jsx && /^[A-Z]/.test(symbol)
 }
 
-export function parseFile(path: string, text: string, maxTokensPerNode: number): ParsedFile {
+export function parseFile(
+  path: string,
+  text: string,
+  maxTokensPerNode: number,
+  minTokensPerNode = 40,
+): ParsedFile {
   const kind = scriptKindFor(path)
   const sourceFile = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, kind)
 
   const imports: string[] = []
   const exports: string[] = []
   const candidates: Candidate[] = []
+  // Имена, экспортированные по-CommonJS. Собираются вторым проходом, потому что
+  // module.exports обычно стоит в конце файла, а пометить надо объявления выше.
+  const commonJsExports = new Set<string>()
 
   const push = (node: ts.Node, symbol: string | null, chunkKind: ChunkKind, parents: string[]) => {
     const { doc, start } = extractDoc(node, text)
@@ -186,7 +194,21 @@ export function parseFile(path: string, text: string, maxTokensPerNode: number):
             ts.isFunctionExpression(d.initializer) ||
             ts.isClassExpression(d.initializer)),
       )
-      if (fnDecls.length === 0) continue // константы уходят в preamble
+      if (fnDecls.length === 0) {
+        // Не функция — но это не значит «не важно». В Keystone-подобных базах
+        // `const UserRightsSet = new GQLListSchema(...)` и есть доменная логика,
+        // а в целевой монорепе таких объявлений 6504. Раньше они уходили
+        // в preamble, теряли имя и не находились по нему вообще.
+        // Мелочь по-прежнему отдаём промежуткам: отдельный вектор на
+        // `const A = 1` — чистый шум.
+        if (approxTokens(stmt) >= minTokensPerNode) {
+          const named = decls.find((d) => ts.isIdentifier(d.name))
+          const symbol = named && ts.isIdentifier(named.name) ? named.name.text : null
+          if (isExported(stmt) && symbol) exports.push(symbol)
+          push(stmt, symbol, 'binding', [])
+        }
+        continue
+      }
 
       for (const d of fnDecls) {
         const symbol = ts.isIdentifier(d.name) ? d.name.text : null
@@ -215,7 +237,39 @@ export function parseFile(path: string, text: string, maxTokensPerNode: number):
     if (ts.isExportAssignment(stmt)) {
       exports.push('default')
     }
+
+    // module.exports = { A, B } / module.exports = X / exports.foo = ...
+    // В целевой монорепе так экспортируют 2174 файла, и до этой ветки строка
+    // `exports:` в обогащающем заголовке у них была пустой, а repo_map показывал
+    // прочерк — при том что экспорт есть.
+    if (ts.isExpressionStatement(stmt) && ts.isBinaryExpression(stmt.expression)) {
+      const { left, right, operatorToken } = stmt.expression
+      if (operatorToken.kind !== ts.SyntaxKind.EqualsToken || !ts.isPropertyAccessExpression(left)) {
+        continue
+      }
+      const target = left.expression.getText(sourceFile)
+      const isModuleExports = target === 'module' && left.name.text === 'exports'
+      const isNamedExport = target === 'exports'
+
+      if (isNamedExport) {
+        commonJsExports.add(left.name.text)
+      } else if (isModuleExports) {
+        if (ts.isObjectLiteralExpression(right)) {
+          for (const prop of right.properties) {
+            const name = prop.name && ts.isIdentifier(prop.name) ? prop.name.text : null
+            if (name) commonJsExports.add(name)
+          }
+        } else if (ts.isIdentifier(right)) {
+          commonJsExports.add(right.text)
+        }
+      }
+    }
   }
+
+  for (const c of candidates) {
+    if (c.symbol && commonJsExports.has(c.symbol)) c.exported = true
+  }
+  exports.push(...commonJsExports)
 
   candidates.sort((a, b) => a.start - b.start)
   return { imports: dedupe(imports), exports: dedupe(exports), candidates, sourceFile }

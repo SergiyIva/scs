@@ -7,18 +7,26 @@
   "bin": {
     "scs": "dist/src/bin/scs.js",
     "scs-mcp": "dist/src/bin/scs-mcp.js",
-    "scs-embed-ollama": "dist/services/embed-ollama/server.js"
+    "scs-daemon": "dist/src/bin/scs-daemon.js",
+    "scs-embed-ollama": "dist/services/embed-ollama/server.js",
+    "scs-rerank": "dist/services/rerank-onnx/server.js"
   },
   "scripts": {
     "build": "tsc",
     "scs": "tsx src/bin/scs.ts",
+    "daemon": "tsx src/bin/scs-daemon.ts",
     "embed": "tsx services/embed-ollama/server.ts",
+    "rerank": "tsx services/rerank-onnx/server.ts",
+    "rerank:gpu": "LD_LIBRARY_PATH=\"$(echo .venv-cuda/lib/python*/site-packages/nvidia/*/lib | tr ' ' :)\" tsx services/rerank-onnx/server.ts",
+    "cuda:libs": "python3 -m venv .venv-cuda && .venv-cuda/bin/pip install nvidia-cublas-cu12 nvidia-cudnn-cu12 nvidia-curand-cu12 nvidia-cufft-cu12 nvidia-cuda-runtime-cu12",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "test": "tsx --test test/*.test.ts"
   },
   "dependencies": {
+    "@huggingface/transformers": "^4.2.0",
     "@modelcontextprotocol/sdk": "^1.22.0",
+    "chokidar": "^5.0.0",
     "commander": "^14.0.2",
     "pg": "^8.16.3",
     "picomatch": "^4.0.3",

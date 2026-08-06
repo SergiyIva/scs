@@ -130,6 +130,76 @@ test('ни одна строка файла не пропадает из инд�
   }
 })
 
+/**
+ * Второй заход на тихую потерю, найденный уже на настоящей монорепе.
+ *
+ * Индексировались только узлы AST, которые чанкер считает кандидатами, плюс шапка
+ * файла. Всё между объявлениями молча пропадало. На целевом корпусе это 6504
+ * верхнеуровневых `const X = new Schema(...)` и 2174 файла с `module.exports`,
+ * то есть бо́льшая часть доменной логики Keystone-подобного кода.
+ */
+const COMMONJS_SAMPLE = `const { GQLListSchema } = require('@core/keystone/schema')
+
+function helper() { return 1 }
+
+const BETWEEN = { marker: 'константа между объявлениями' }
+
+const UserRightsSet = new GQLListSchema('UserRightsSet', {
+  fields: {
+    canReadTickets: { type: 'Checkbox', defaultValue: false },
+    canManageUsers: { type: 'Checkbox', defaultValue: false },
+    canExportData: { type: 'Checkbox', defaultValue: false },
+  },
+  access: { read: true, create: false },
+})
+
+module.exports = { UserRightsSet, helper }
+`
+
+test('крупная именованная привязка получает своё имя, а не растворяется в шапке', () => {
+  const c = chunk('domains/user/schema/UserRightsSet.js', COMMONJS_SAMPLE).find(
+    (x) => x.symbol === 'UserRightsSet',
+  )
+  assert.ok(c, 'const X = new GQLListSchema(...) не стал именованным чанком')
+  assert.equal(c.kind, 'binding')
+  assert.match(c.rawText, /canReadTickets/)
+})
+
+test('экспорт по-CommonJS виден так же, как ES-экспорт', () => {
+  const chunks = chunk('domains/user/schema/UserRightsSet.js', COMMONJS_SAMPLE)
+  const card = chunks.find((x) => x.kind === 'file_card')
+  assert.ok(card)
+  assert.match(card.rawText, /Экспортирует:.*UserRightsSet/)
+
+  const binding = chunks.find((x) => x.symbol === 'UserRightsSet')
+  assert.ok(binding?.exported, 'module.exports = { UserRightsSet } не пометил символ экспортируемым')
+})
+
+test('ни одна строка не теряется между объявлениями', () => {
+  const indexed = chunk('domains/user/schema/UserRightsSet.js', COMMONJS_SAMPLE)
+    .filter((c) => c.kind !== 'file_card')
+    .map((c) => c.rawText)
+    .join('\n')
+
+  for (const probe of ['require(', 'function helper', 'BETWEEN', 'module.exports = {']) {
+    assert.ok(indexed.includes(probe), `«${probe}» не попал ни в один чанк`)
+  }
+})
+
+test('диапазон строк не врёт после приклеивания промежутка', () => {
+  const lines = COMMONJS_SAMPLE.split('\n')
+  for (const c of chunk('domains/user/schema/UserRightsSet.js', COMMONJS_SAMPLE)) {
+    if (c.kind === 'file_card') continue
+    const inRange = lines.slice(c.startLine - 1, c.endLine).join('\n')
+    // Первая содержательная строка чанка обязана присутствовать в его диапазоне.
+    const firstLine = c.rawText.split('\n').find((l) => l.trim())!
+    assert.ok(
+      inRange.includes(firstLine.trim()),
+      `${c.symbol ?? c.kind}: L${c.startLine}-${c.endLine} не содержит «${firstLine.trim().slice(0, 40)}»`,
+    )
+  }
+})
+
 test('переросток режется на части, а не даёт один бессмысленный вектор', () => {
   const body = Array.from({ length: 400 }, (_, i) => `  const v${i} = compute(${i})`).join('\n')
   const huge = `export function giant(): void {\n${body}\n}\n`

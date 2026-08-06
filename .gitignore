@@ -10,4 +10,5 @@ yarn-error.log*
 /.pnp
 .pnp.js
 
-.vscode/*
+.vscode/*.venv-cuda/
+services/embed-npu/model/

@@ -47,15 +47,17 @@ export async function status(): Promise<DbStatus> {
   const { rows: migrations } = await db().query<{ name: string }>(
     'SELECT name FROM _migrations ORDER BY name',
   )
+  // Считаем подзапросами, а не двумя LEFT JOIN от одной таблицы: те давали
+  // декартово произведение, и на монорепе (7098 файлов × 54 237 локаций ≈
+  // 385 млн строк до агрегации) `scs status` просто зависал. На корпусе из
+  // 33 файлов это было незаметно — ещё один запрос, «работавший» ровно
+  // до первого настоящего объёма.
   const { rows: repos } = await db().query(`
     SELECT r.name,
-           r.last_indexed_at                    AS "lastIndexed",
-           count(DISTINCT f.path)::int          AS files,
-           count(DISTINCT l.id)::int            AS chunks
+           r.last_indexed_at AS "lastIndexed",
+           (SELECT count(*)::int FROM files f           WHERE f.repo_id = r.id) AS files,
+           (SELECT count(*)::int FROM chunk_locations l WHERE l.repo_id = r.id) AS chunks
       FROM repos r
-      LEFT JOIN files f           ON f.repo_id = r.id
-      LEFT JOIN chunk_locations l ON l.repo_id = r.id
-     GROUP BY r.id, r.name, r.last_indexed_at
      ORDER BY r.name
   `)
   const { rows: total } = await db().query<{ n: string }>('SELECT count(*) AS n FROM chunks')

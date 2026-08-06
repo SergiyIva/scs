@@ -3,6 +3,7 @@ import { db, tx, toVectorLiteral } from './pool.js'
 import { loadConfig } from '../config.js'
 import { Embedder } from '../embed/client.js'
 import { compilePriors } from './priors.js'
+import { Reranker } from '../rerank/client.js'
 
 export type SearchMode = 'hybrid' | 'semantic' | 'lexical'
 
@@ -21,6 +22,8 @@ export interface SearchOptions {
   pathGlob?: string
   lang?: string
   maxPerFile?: number
+  /** Перекрывает search.rerank.enabled — нужно для замеров «с» и «без». */
+  rerank?: boolean
 }
 
 interface Row {
@@ -32,6 +35,7 @@ interface Row {
   parent_chain: string[]
   lang: string
   raw_text: string
+  embed_text: string
   score: string
   sim: string | null
   in_vec: boolean
@@ -62,8 +66,15 @@ export async function search(opts: SearchOptions): Promise<SearchHit[]> {
   const useLex = mode !== 'semantic'
 
   let vecLiteral: string | null = null
+  let modelId: string | null = null
   if (useVec) {
-    const [v] = await new Embedder().embed([opts.query], 'query')
+    const embedder = new Embedder()
+    // Идентификатор модели нужен как фильтр: в таблице chunks могут лежать
+    // вектора нескольких моделей (A/B по §18, смена модели, недочищенный старый
+    // индекс). Они несравнимы между собой, и без фильтра приближённый отбор
+    // тратил бы кандидатов на чужое пространство — молча и без ошибки.
+    modelId = await embedder.model()
+    const [v] = await embedder.embed([opts.query], 'query')
     if (!v) throw new Error('эмбеддер не вернул вектор запроса')
     vecLiteral = toVectorLiteral(v)
   }
@@ -92,6 +103,7 @@ export async function search(opts: SearchOptions): Promise<SearchHit[]> {
            FROM (SELECT content_hash, embedding <=> $2::vector AS dist
                    FROM chunks
                   WHERE $2::vector IS NOT NULL
+                    AND model_id = $12
                   ORDER BY embedding <=> $2::vector
                   LIMIT $6 * ${VEC_OVERFETCH}) cand
            JOIN chunk_locations l ON l.content_hash = cand.content_hash
@@ -110,6 +122,10 @@ export async function search(opts: SearchOptions): Promise<SearchHit[]> {
        WHERE l.repo_id = (SELECT id FROM repo)
          AND ($4::text IS NULL OR l.path LIKE $4)
          AND ($5::text IS NULL OR l.lang = $5)
+         -- Фильтр по модели нужен и здесь: вектора разных моделей несравнимы,
+         -- а без упоминания $12 в этой ветке запрос ещё и падал на числе
+         -- параметров — ошибка вылезала только под --path и --lang.
+         AND ($12::text IS NULL OR c.model_id = $12)
     ),
     vec AS (
       ${vecSql}
@@ -138,7 +154,7 @@ export async function search(opts: SearchOptions): Promise<SearchHit[]> {
     -- и join с ней возвращал бы полный проход по всем локациям репозитория
     -- ради полусотни строк — на 40k чанков это стоило ~80 мс.
     SELECT l.path, l.start_line, l.end_line, l.symbol, l.kind, l.parent_chain,
-           l.lang, c.raw_text, fu.score::text AS score, fu.in_vec, fu.in_lex,
+           l.lang, c.raw_text, c.embed_text, fu.score::text AS score, fu.in_vec, fu.in_lex,
            -- RRF задаёт порядок, но его шкала (1/(k+rank)) ничего не говорит
            -- о том, релевантен ли результат вообще. Косинус говорит.
            CASE WHEN $2::vector IS NULL THEN NULL
@@ -164,6 +180,7 @@ export async function search(opts: SearchOptions): Promise<SearchHit[]> {
     Math.max(k * 6, 60),
     cfg.search.vectorWeight,
     cfg.search.lexicalWeight,
+    modelId,
   ]
 
   // ef_search задаётся на сессию, поэтому запрос идёт в транзакции с SET LOCAL:
@@ -171,7 +188,13 @@ export async function search(opts: SearchOptions): Promise<SearchHit[]> {
   // 200 — измеренный компромисс: при 40 (умолчание pgvector) выдача совпадает
   // с точной лишь на 69%, при 600 совпадает полностью, но стоит уже 80 мс.
   const { rows } = await tx(async (c) => {
-    if (!filtered) await c.query(`SET LOCAL hnsw.ef_search = ${cfg.search.efSearch}`)
+    if (!filtered) {
+      await c.query(`SET LOCAL hnsw.ef_search = ${cfg.search.efSearch}`)
+      // Фильтр по model_id отсекает часть найденного индексом, и без итеративного
+      // обхода кандидатов может не хватить: pgvector вернул бы меньше, чем просили,
+      // не сообщив об этом.
+      await c.query(`SET LOCAL hnsw.iterative_scan = relaxed_order`)
+    }
     return c.query<Row>(sql, params)
   })
 
@@ -184,6 +207,7 @@ export async function search(opts: SearchOptions): Promise<SearchHit[]> {
     parentChain: r.parent_chain,
     lang: r.lang,
     rawText: r.raw_text,
+    embedText: r.embed_text,
     score: Number(r.score),
     sim: r.sim === null ? null : Number(r.sim),
     via: r.in_vec && r.in_lex ? 'both' : r.in_vec ? 'vector' : 'lexical',
@@ -197,7 +221,73 @@ export async function search(opts: SearchOptions): Promise<SearchHit[]> {
     .sort((a, b) => b.s - a.s)
     .map(({ h, s }) => ({ ...h, score: s }))
 
-  return diversify(ranked, k, maxPerFile)
+  const useRerank = opts.rerank ?? cfg.search.rerank.enabled
+  const reranked = useRerank ? await rerankHits(ranked, opts.query, priors) : ranked
+
+  return diversify(reranked, k, maxPerFile)
+}
+
+/**
+ * Переупорядочивание коротким списком через cross-encoder.
+ *
+ * Реранкер видит пару «запрос ↔ текст чанка» целиком и потому судит точнее
+ * эмбеддера, но стоит на три порядка дороже — отсюда работа только по верхушке.
+ * Скор реранкера домножается на те же априорные множители: cross-encoder не
+ * знает, что перед ним тест или карточка файла, а мы знаем.
+ *
+ * Хвост за пределами candidates сохраняет исходный порядок и уходит вниз:
+ * выбрасывать его нельзя, иначе фильтр по числу файлов останется без запаса.
+ */
+async function rerankHits(
+  hits: SearchHit[],
+  query: string,
+  priors: ReturnType<typeof compilePriors>,
+): Promise<SearchHit[]> {
+  const cfg = loadConfig()
+  const head = hits.slice(0, cfg.search.rerank.candidates)
+  const tail = hits.slice(cfg.search.rerank.candidates)
+  if (!head.length) return hits
+
+  // Реранкеру отдаём ровно то, что видела модель при индексации: обогащённый
+  // текст с путём, экспортами и строкой документации. Вариант «путь + чистый код»
+  // замерен и оказался не лучше (§20).
+  const documents = head.map((h) => h.embedText ?? h.rawText)
+
+  const scores = await new Reranker().score(query, documents)
+  if (!scores) return hits
+
+  const rescored = head
+    .map((h, i) => ({ ...h, score: scores[i]! * priors.apply(h) }))
+    .sort((a, b) => b.score - a.score)
+
+  if (cfg.search.rerank.fusion === 'replace') return [...rescored, ...tail]
+
+  /**
+   * Слияние двух порядков вместо замены одного другим.
+   *
+   * Замер: чистая замена поднимает recall@5 с 37.9% до 41.4%, но роняет recall@1
+   * с 19.0% до 15.5%. Причина понятна — cross-encoder вытаскивает середину пула,
+   * но сдвигает уверенное первое место bi-encoder'а. Обе ветви правы по-своему,
+   * а их шкалы несравнимы: сигмоида логита против RRF-скора. Ровно та задача,
+   * для которой в §8 уже выбран RRF — он работает по рангам и калибровки
+   * не требует.
+   */
+  const rank = new Map<SearchHit, { vec: number; ce: number }>()
+  head.forEach((h, i) => rank.set(h, { vec: i + 1, ce: 0 }))
+  rescored.forEach((h, i) => {
+    const orig = head.find((x) => x.path === h.path && x.startLine === h.startLine)
+    if (orig) rank.get(orig)!.ce = i + 1
+  })
+
+  const k = cfg.search.rrfK
+  const fused = head
+    .map((h) => {
+      const r = rank.get(h)!
+      return { ...h, score: 1 / (k + r.vec) + cfg.search.rerank.weight / (k + r.ce) }
+    })
+    .sort((a, b) => b.score - a.score)
+
+  return [...fused, ...tail]
 }
 
 /**

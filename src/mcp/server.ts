@@ -205,6 +205,9 @@ export function buildServer(): McpServer {
       return text(
         [
           `модель: ${cfg.embed.model} (${cfg.embed.backend})`,
+          // Реранкер меняет и качество, и время ответа втрое-тридцатикратно,
+          // поэтому его состояние стоит рядом с моделью, а не в отдельном месте.
+          `реранкер: ${cfg.search.rerank.enabled ? `включён, ${cfg.search.rerank.url}` : 'выключен'}`,
           `уникальных векторов: ${s.totalChunks}`,
           ...lines,
         ].join('\n'),
