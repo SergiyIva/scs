@@ -1,14 +1,33 @@
 {
-  "name": "embedded-project",
-  "version": "1.0.0",
-  "description": "",
-  "main": "dist/index.js",
+  "name": "scs",
+  "version": "0.1.0",
+  "description": "Semantic code search: local indexing daemon + MCP server",
+  "type": "module",
+  "private": true,
+  "bin": {
+    "scs": "dist/src/bin/scs.js",
+    "scs-mcp": "dist/src/bin/scs-mcp.js",
+    "scs-embed-ollama": "dist/services/embed-ollama/server.js"
+  },
   "scripts": {
-    "build": "tsc"
+    "build": "tsc",
+    "scs": "tsx src/bin/scs.ts",
+    "embed": "tsx services/embed-ollama/server.ts",
+    "db:up": "docker compose up -d",
+    "db:down": "docker compose down",
+    "test": "tsx --test test/*.test.ts"
   },
-  "dependencies": {},
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.22.0",
+    "commander": "^14.0.2",
+    "pg": "^8.16.3",
+    "picomatch": "^4.0.3",
+    "typescript": "^6.0.3",
+    "zod": "^4.1.12"
+  },
   "devDependencies": {
-    "typescript": "^6.0.3"
-  },
-  "private": true
+    "@types/node": "^22.18.11",
+    "@types/pg": "^8.15.6",
+    "tsx": "^4.20.6"
+  }
 }
