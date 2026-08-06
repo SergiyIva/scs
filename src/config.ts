@@ -46,6 +46,10 @@ const ConfigSchema = z.object({
       // на порядки больше поводов запутаться.
       defaultMode: z.enum(['hybrid', 'semantic', 'lexical']).default('semantic'),
       candidates: z.number().int().positive().default(50),
+      // hnsw.ef_search для векторной ветки. Умолчание pgvector — 40, и на
+      // корпусе в 40k чанков оно даёт лишь 69% совпадения с точным перебором.
+      // 200 даёт 97% за 5 мс, 600 — 100% за 80 мс. Замер в docs/DESIGN.md §17.
+      efSearch: z.number().int().positive().default(200),
       rrfK: z.number().int().positive().default(60),
       maxPerFile: z.number().int().positive().default(2),
       tokenBudget: z.number().int().positive().default(4000),
@@ -57,6 +61,21 @@ const ConfigSchema = z.object({
       // плотно набита идентификаторами, поэтому ts_rank её систематически
       // переоценивает и она вытесняет настоящую реализацию из топа.
       fileCardPrior: z.number().positive().default(0.6),
+      // Понижающие множители по шаблону пути (идея из grepai). Тест или фикстура
+      // почти никогда не является ответом на вопрос «как это работает», но
+      // лексически и семантически конкурирует с реализацией на равных.
+      penalties: z
+        .array(z.object({ pattern: z.string(), factor: z.number().positive() }))
+        .default([
+          { pattern: '**/*.test.*', factor: 0.4 },
+          { pattern: '**/*.spec.*', factor: 0.4 },
+          { pattern: '**/test/**', factor: 0.5 },
+          { pattern: '**/tests/**', factor: 0.5 },
+          { pattern: '**/__tests__/**', factor: 0.5 },
+          { pattern: '**/__mocks__/**', factor: 0.4 },
+          { pattern: '**/fixtures/**', factor: 0.4 },
+          { pattern: '**/examples/**', factor: 0.6 },
+        ]),
     })
     .prefault({}),
   repos: z.array(RepoConfig).default([]),

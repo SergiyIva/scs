@@ -64,7 +64,14 @@ function extractDoc(node: ts.Node, text: string): { doc: string | null; start: n
   const body = text.slice(jsdoc.pos, jsdoc.end)
   const first = body
     .split('\n')
-    .map((l) => l.replace(/^\s*\/?\*+\/?/, '').trim())
+    // Снимаем и открывающие `/**`/`*`, и закрывающий `*/` — иначе у однострочного
+    // JSDoc хвост `*/` уезжает в заголовок каждого такого чанка.
+    .map((l) =>
+      l
+        .replace(/^\s*\/?\*+/, '')
+        .replace(/\*\/\s*$/, '')
+        .trim(),
+    )
     .find((l) => l.length > 0 && !l.startsWith('@'))
 
   return { doc: first ? first.slice(0, 200) : null, start: jsdoc.pos }

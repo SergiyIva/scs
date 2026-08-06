@@ -110,6 +110,26 @@ test('карточка файла перечисляет экспорты', () =
   assert.match(card.rawText, /nextInterval/)
 })
 
+/**
+ * Самый опасный класс ошибок в индексаторе — тихая потеря. Код, который не попал
+ * в индекс, нельзя найти ни семантикой, ни лексикой, и никакой ошибки при этом
+ * не возникает. Раньше хвост длинной шапки и переполненного чанка обрезался
+ * молча; теперь он обязан оказаться в каком-то из чанков.
+ */
+test('ни одна строка файла не пропадает из индекса', () => {
+  // Шапка из 400 констант: она не покрывается ни одним AST-кандидатом
+  // и раньше обрезалась по maxTokens.
+  const head = Array.from({ length: 400 }, (_, i) => `const SETTING_${i} = 'value_${i}'`).join('\n')
+  const src = `import { a } from './a'\n${head}\n\nexport function last(): number {\n  return 1\n}\n`
+
+  const chunks = chunk('src/big.ts', src)
+  const indexed = chunks.map((c) => c.rawText).join('\n')
+
+  for (const probe of ['SETTING_0', 'SETTING_200', 'SETTING_399', 'function last']) {
+    assert.ok(indexed.includes(probe), `${probe} не попал ни в один чанк`)
+  }
+})
+
 test('переросток режется на части, а не даёт один бессмысленный вектор', () => {
   const body = Array.from({ length: 400 }, (_, i) => `  const v${i} = compute(${i})`).join('\n')
   const huge = `export function giant(): void {\n${body}\n}\n`

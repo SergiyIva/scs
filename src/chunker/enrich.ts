@@ -42,18 +42,47 @@ function list(items: string[]): string {
 /**
  * Собирает обогащающий заголовок. Он попадает в embed_text (то, что видит модель),
  * но НЕ в raw_text (то, что показываем человеку).
+ *
+ * Заголовок масштабируется под размер кода. Причина: строки repo/file/path-words/
+ * exports/imports ОДИНАКОВЫ для всех чанков файла, и на коротком чанке они
+ * составляют большую часть входа модели — вектор начинает описывать файл, а не
+ * функцию. Измеренное следствие: тривиальный хелпер toVectorLiteral (47 токенов
+ * кода при 78 токенах заголовка) обыгрывал missingHashes на запросе, к которому
+ * не имел отношения.
+ *
+ * Поэтому при нехватке места строки отбрасываются от наименее специфичных для
+ * чанка к наиболее: сначала exports (чистая файловая обвязка), затем imports,
+ * затем path-words. repo/file/scope/doc не отбрасываются никогда — это адрес
+ * чанка и его собственное описание.
  */
-export function buildHeader(ctx: EnrichContext, budgetTokens: number): string {
-  const lines = [`// repo: ${ctx.repo}`, `// file: ${ctx.path}`, `// path-words: ${pathWords(ctx.path)}`]
-
-  if (ctx.exports.length) lines.push(`// exports: ${list(ctx.exports)}`)
-  if (ctx.imports.length) lines.push(`// imports: ${list(ctx.imports)}`)
-
+export function buildHeader(
+  ctx: EnrichContext,
+  budgetTokens: number,
+  codeTokens = Number.POSITIVE_INFINITY,
+): string {
   const scope = [...ctx.parentChain, ctx.symbol].filter(Boolean)
-  if (scope.length) lines.push(`// scope: ${ctx.kind} ${scope.join(' > ')}`)
 
-  if (ctx.doc) lines.push(`// doc: ${ctx.doc}`)
+  const always = [`// repo: ${ctx.repo}`, `// file: ${ctx.path}`]
+  if (scope.length) always.push(`// scope: ${ctx.kind} ${scope.join(' > ')}`)
+  if (ctx.doc) always.push(`// doc: ${ctx.doc}`)
 
-  const header = lines.join('\n')
+  // От наиболее ценного к наименее — отбрасываем с конца.
+  const optional: string[] = []
+  optional.push(`// path-words: ${pathWords(ctx.path)}`)
+  if (ctx.imports.length) optional.push(`// imports: ${list(ctx.imports)}`)
+  if (ctx.exports.length) optional.push(`// exports: ${list(ctx.exports)}`)
+
+  // Заголовок не должен весить больше кода, который он описывает.
+  const allowance = Math.min(budgetTokens, Math.max(codeTokens, MIN_HEADER_TOKENS))
+
+  const kept = [...optional]
+  const assemble = () => [...always.slice(0, 2), ...kept, ...always.slice(2)].join('\n')
+
+  while (kept.length > 0 && estimateTokens(assemble()) > allowance) kept.pop()
+
+  const header = assemble()
   return estimateTokens(header) > budgetTokens ? truncateToTokens(header, budgetTokens) : header
 }
+
+/** Ниже этого порога заголовок бесполезен: адрес чанка нужен всегда. */
+const MIN_HEADER_TOKENS = 70

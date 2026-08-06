@@ -1,0 +1,58 @@
+{"q": "где вычисляется, сколько жилец должен или переплатил по последней квитанции", "expect": ["apps/condo/domains/billing/schema/computeUnitBalance.js::computeUnitBalance"]}
+{"q": "как из квитанций за разные месяцы выбирается та, по которой показывается задолженность квартиры", "expect": ["apps/condo/domains/billing/schema/computeUnitBalance.js::selectBalanceReceipts"]}
+{"q": "откуда берётся код страны торговой точки, который отдаётся мобильному приложению перед оплатой", "expect": ["apps/condo/domains/acquiring/schema/GetWalletPaymentAvailabilityService.js::resolveMerchantCountryCode"]}
+{"q": "как узнать у Stripe, в какой стране зарегистрирован аккаунт продавца", "expect": ["apps/condo/domains/acquiring/integrations/infra/adapters/stripe/StripeService.js::getMerchantCountryCode"]}
+{"q": "где в памяти держится соответствие организации и её платёжного шлюза, чтобы не ходить в базу на каждый запрос", "expect": ["apps/condo/domains/acquiring/integrations/PaymentProviderResolver.js::PaymentProviderResolver"]}
+{"q": "как проверяется, что адрес для подтверждения продавца, присланный с устройства, действительно принадлежит Apple", "expect": ["apps/condo/domains/acquiring/integrations/application/wallet/utils.js::isValidApplePayMerchantValidationUrl"]}
+{"q": "что защищает от повторного списания денег, если пользователь дважды нажал кнопку оплаты в приложении", "expect": ["apps/condo/domains/acquiring/integrations/application/wallet/utils.js::resolveWalletConfirmIdempotencyEntry"]}
+{"q": "как сервер убеждается, что уведомление о смене статуса оплаты пришло от настоящего провайдера, а не от постороннего", "expect": ["apps/condo/domains/acquiring/integrations/infra/adapters/mydom/MyDomWebhookAdapter.ts::verifySecret"]}
+{"q": "how is an incoming payment status callback authenticated so that a stranger cannot fake it", "expect": ["apps/condo/domains/acquiring/integrations/infra/adapters/mydom/MyDomWebhookAdapter.ts::verifySecret"]}
+{"q": "где формируется адрес, на который внешняя платёжная система шлёт обратные вызовы для конкретной организации", "expect": ["apps/condo/domains/acquiring/integrations/application/redirectUtils.js::generateWebhookCallbackUrl"]}
+{"q": "как проверяется, что адрес возврата после оплаты ведёт на разрешённый сайт, а не куда попало", "expect": ["apps/condo/domains/acquiring/integrations/application/redirectUtils.js::isWebUrl", "apps/condo/domains/acquiring/integrations/application/redirectUtils.js::validateWebUrls"]}
+{"q": "где считается надбавка, которую житель платит сверх суммы счёта при онлайн-оплате", "expect": ["apps/condo/domains/acquiring/utils/serverSchema/feeDistribution.js::FeeDistribution"]}
+{"q": "where is the extra charge added on top of an invoice when a tenant pays online computed", "expect": ["apps/condo/domains/acquiring/utils/serverSchema/feeDistribution.js::FeeDistribution"]}
+{"q": "как для каждой квитанции в общей оплате подбирается нужный договор с банком", "expect": ["apps/condo/domains/acquiring/schema/RegisterMultiPaymentService.js::findReceiptAcquiringContext"]}
+{"q": "где проверяется, что у получателя денег заполнены все банковские реквизиты", "expect": ["apps/condo/domains/acquiring/utils/recipient.ts::isCompleteRecipient", "apps/condo/domains/acquiring/utils/recipient.ts::toValidRecipientOrNull"]}
+{"q": "где собирается список банков, который показывается жильцу на странице выбора способа оплаты", "expect": ["apps/condo/domains/acquiring/integrations/infra/routers/MyDomPayRouter.ts::selectRenderableMethods"]}
+{"q": "куда попадает житель после успешной оплаты по ссылке, если он не авторизован в системе", "expect": ["apps/condo/pages/payment/success.tsx::PaymentSuccessPage", "apps/condo/pages/marketplace/invoice/payment/success.tsx::SuccessPage"]}
+{"q": "где разбирается строка, зашитая в квадратный код на бумажной квитанции", "expect": ["apps/condo/domains/billing/schema/ValidateQRCodeService.js::ValidateQRCodeService"]}
+{"q": "как при загрузке начислений из внешней системы определяется лицевой счёт жильца", "expect": ["apps/condo/domains/billing/schema/resolvers/accountResolver.js::AccountResolver"]}
+{"q": "как при импорте начислений приводится к единому виду расчётный месяц", "expect": ["apps/condo/domains/billing/schema/resolvers/periodResolver.js::PeriodResolver"]}
+{"q": "где для сводной таблицы долгов по дому подбираются нужные объекты недвижимости", "expect": ["apps/condo/domains/billing/schema/BillingChessboardService.js::findBillingPropertyIds"]}
+{"q": "где лежит валюта, которая берётся, если у организации ничего не настроено", "expect": ["apps/condo/domains/common/constants/currencies.js::DEFAULT_CURRENCY_CODE"]}
+{"q": "почему адрес почты пользователя сохраняется не в том виде, в каком его ввели", "expect": ["apps/condo/domains/common/utils/mail.ts::normalizeEmail"]}
+{"q": "где решается, что регулярная задача сломалась и пора слать оповещение дежурному", "expect": ["apps/condo/domains/common/tasks/cronHealthWatchdog.ts::decideAlerts"]}
+{"q": "как понять, что фоновые обработчики вообще перестали шевелиться — какой-то контрольный сигнал", "expect": ["apps/condo/domains/common/tasks/cronHealthWatchdog.ts::decideCanaryAlert"]}
+{"q": "где по истории последних запусков вычисляется, здорова ли регулярная работа по расписанию", "expect": ["packages/keystone/queueIntrospection.js"]}
+{"q": "where is the health of scheduled background jobs computed from their recent runs", "expect": ["packages/keystone/queueIntrospection.js"]}
+{"q": "откуда админская панель берёт сводку по состоянию фоновых обработчиков", "expect": ["apps/condo/domains/common/schema/GetCronHealthService.ts::collectCronHealth"]}
+{"q": "где объявляется обёртка, превращающая обычную функцию в отложенную работу для воркера", "expect": ["packages/keystone/tasks.js::createTask"]}
+{"q": "как система подбирает работника для заявки с учётом его загруженности и расстояния до дома", "expect": ["apps/condo/domains/ticket/tasks/autoAssignExecutor.ts::smartAssignExecutor"]}
+{"q": "где по ночам заново раскладывается план работ на ближайшие дни по всем незакрытым заявкам организации", "expect": ["apps/condo/domains/ticket/tasks/dailyAutoSchedule.js::runDailyAutoScheduleForOrg"]}
+{"q": "где ограничивается количество обращений, которые один житель может завести за сутки", "expect": ["apps/condo/domains/ticket/schema/Ticket.ts::checkDailyTicketLimit"]}
+{"q": "where does the system stop a tenant from opening more than ten requests within 24 hours", "expect": ["apps/condo/domains/ticket/schema/Ticket.ts::checkDailyTicketLimit"]}
+{"q": "где по времени начала и окончания работ считается, сколько минут фактически потрачено", "expect": ["apps/condo/domains/ticket/schema/Ticket.ts::calculateActualDuration"]}
+{"q": "перечень полей заявки, правки которых не должны попадать в ленту истории изменений", "expect": ["apps/condo/domains/ticket/constants.js::OMIT_TICKET_CHANGE_TRACKABLE_FIELDS"]}
+{"q": "какие поля обращения житель не имеет права редактировать сам", "expect": ["apps/condo/domains/ticket/constants/common.js::INACCESSIBLE_TICKET_FIELDS_FOR_MANAGE_BY_RESIDENT"]}
+{"q": "как устроен общий механизм записи истории правок сущности для показа в ленте событий", "expect": ["apps/condo/domains/common/utils/serverSchema/changeTrackable.js::generateChangeTrackableFieldsFrom"]}
+{"q": "где для отчётов группируются и считаются обращения по статусам и категориям", "expect": ["apps/condo/domains/analytics/utils/services/dataLoaders/ticket.ts::TicketDataLoader"]}
+{"q": "где проверяется, что жилец передаёт показания в разрешённые дни месяца", "expect": ["apps/condo/domains/meter/utils/serverSchema/resolveHelpers.js::isReadingDateAllowed"]}
+{"q": "как строится ключ, по которому две переданные записи расхода считаются одинаковыми", "expect": ["apps/condo/domains/meter/utils/serverSchema/registerHelpers.js::createMeterReadingKey"]}
+{"q": "где человеческие названия ресурсов из загружаемого файла (горячая вода, электричество) превращаются в системные значения", "expect": ["apps/condo/domains/meter/utils/taskSchema/importerResolver.js::getMappers"]}
+{"q": "где перечислены заголовки столбцов файла, по которому массово заводят приборы учёта", "expect": ["apps/condo/domains/meter/utils/taskSchema/importerResolver.js::getColumnNames"]}
+{"q": "как не отправить жильцу одно и то же напоминание про поверку счётчика дважды", "expect": ["apps/condo/domains/meter/tasks/sendVerificationDateReminder.js::filterSentReminders"]}
+{"q": "где определяется, можно ли уже рассылать объявление жильцам или ещё рано", "expect": ["apps/condo/domains/news/tasks/notifyResidentsAboutNewsItem.js::checkSendingPossibility"]}
+{"q": "как посчитать, скольким квартирам дома реально уйдёт объявление", "expect": ["apps/condo/domains/news/utils/serverSchema/recipientsCounterUtils.js::countUniqueUnitsFromResidentsByProperty", "apps/condo/domains/news/utils/serverSchema/recipientsCounterUtils.js::countUniqueUnitsFromResidentsByPropertyIds"]}
+{"q": "где из текстового описания дома собирается структура подъездов, этажей и квартир", "expect": ["apps/condo/domains/ai-agent/server/sub-agents/property/mapGenerator.js::buildBuildingMap"]}
+{"q": "где в интерфейсе правится схема дома — добавление и удаление секций", "expect": ["apps/condo/domains/property/components/panels/Builder/MapConstructor.ts::MapEdit"]}
+{"q": "where is the editable model of a building layout implemented for adding an entrance", "expect": ["apps/condo/domains/property/components/panels/Builder/MapConstructor.ts::MapEdit"]}
+{"q": "где генерится случайный пароль для технической учётки под интеграцию", "expect": ["apps/condo/domains/user/schema/RegisterNewServiceUserService.js::generateStrongPassword"]}
+{"q": "где перечислены галочки полномочий, которые можно выдать сотруднику поддержки", "expect": ["apps/condo/domains/user/schema/UserRightsSet.js::UserRightsSet"]}
+{"q": "как обрабатывается повторная заливка одной и той же компании из внешнего реестра", "expect": ["apps/condo/domains/organization/schema/RegisterServiceProviderOrganizationService.ts::_isDuplicateImportKeyError"]}
+{"q": "куда уходит информация о новой компании во внешнюю систему продаж", "expect": ["apps/condo/domains/organization/utils/serverSchema/Organization.js::pushOrganizationToSalesCRM"]}
+{"q": "где справочник жильцов дома превращается в карточки людей для сотрудников управляющей компании", "expect": ["apps/condo/domains/contact/schema/_internalSyncContactsWithResidentsForOrganizationService.ts::_internalSyncContactsWithResidentsForOrganizationService"]}
+{"q": "где выставленный счёт становится опубликованным и жильцу улетает пуш", "expect": ["apps/condo/domains/marketplace/schema/Invoice.js::sendPush"]}
+{"q": "как проверяется, что у организации вообще включена возможность голосового робота", "expect": ["apps/condo/domains/ai-agent/schema/StartVoiceCallService.ts::_isVoiceEnabledForOrganization"]}
+{"q": "как по номеру абонента выбирается, через какого оператора слать короткое сообщение", "expect": ["apps/condo/domains/notification/adapters/smsProviderRouting.js::selectSmsProviderTypeByPhone"]}
+{"q": "how does the backend pick which text-message gateway to use based on the subscriber country code", "expect": ["apps/condo/domains/notification/adapters/smsProviderRouting.js::selectSmsProviderTypeByPhone"]}
+{"q": "где сотрудники и их специализации склеиваются в строку для выгрузки в таблицу", "expect": ["apps/condo/domains/scope/schema/ExportPropertyScopeToExcelService.ts::mapEmployeesToExcelRow"]}

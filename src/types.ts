@@ -9,6 +9,8 @@ export type ChunkKind =
   | 'type'
   | 'preamble'
   | 'file_card'
+  /** Раздел документации: заголовок Markdown и текст до следующего заголовка. */
+  | 'section'
 
 /** Результат работы чанкера: ещё без вектора и без content_hash. */
 export interface RawChunk {

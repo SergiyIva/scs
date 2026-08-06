@@ -1,9 +1,17 @@
 import type { SearchHit, ChunkKind } from '../types.js'
-import { db, toVectorLiteral } from './pool.js'
+import { db, tx, toVectorLiteral } from './pool.js'
 import { loadConfig } from '../config.js'
 import { Embedder } from '../embed/client.js'
+import { compilePriors } from './priors.js'
 
 export type SearchMode = 'hybrid' | 'semantic' | 'lexical'
+
+/**
+ * Во сколько раз больше чанков берём из HNSW, чем нужно локаций.
+ * Один вектор может быть общим для нескольких мест (копипаста, другая ветка),
+ * плюс часть кандидатов отсеется фильтром по репозиторию.
+ */
+const VEC_OVERFETCH = 2
 
 export interface SearchOptions {
   repo: string
@@ -60,6 +68,38 @@ export async function search(opts: SearchOptions): Promise<SearchHit[]> {
     vecLiteral = toVectorLiteral(v)
   }
 
+  // Фильтры по пути и языку применяются ПОСЛЕ векторного отбора, поэтому под
+  // ними приближённый поиск может не набрать кандидатов вовсе. В этом случае
+  // честнее заплатить полным перебором: он медленный, но точный.
+  const filtered = Boolean(opts.pathGlob || opts.lang)
+
+  /**
+   * Векторная ветка. Замер на 39 655 чанках показал, что решает не настройка
+   * HNSW, а форма запроса: пока ORDER BY стоит над join'ом chunk_locations
+   * с chunks, планировщик не может воспользоваться индексом и считает
+   * расстояние до КАЖДОГО вектора — 194 мс на запрос. Если же отбор идёт
+   * по одной таблице chunks, включается HNSW и остаётся 5 мс при совпадении
+   * выдачи с точной на 97% (ef_search=200, кандидатов вдвое больше нужного).
+   */
+  const vecSql = filtered
+    ? `SELECT id, ROW_NUMBER() OVER (ORDER BY embedding <=> $2::vector) AS rank
+         FROM filtered
+        WHERE $2::vector IS NOT NULL
+        ORDER BY embedding <=> $2::vector
+        LIMIT $6`
+    : `SELECT id, ROW_NUMBER() OVER (ORDER BY dist) AS rank FROM (
+         SELECT l.id, cand.dist
+           FROM (SELECT content_hash, embedding <=> $2::vector AS dist
+                   FROM chunks
+                  WHERE $2::vector IS NOT NULL
+                  ORDER BY embedding <=> $2::vector
+                  LIMIT $6 * ${VEC_OVERFETCH}) cand
+           JOIN chunk_locations l ON l.content_hash = cand.content_hash
+          WHERE l.repo_id = (SELECT id FROM repo)
+          ORDER BY cand.dist
+          LIMIT $6
+       ) ranked`
+
   const sql = `
     WITH repo AS (SELECT id FROM repos WHERE name = $1),
     filtered AS (
@@ -72,11 +112,7 @@ export async function search(opts: SearchOptions): Promise<SearchHit[]> {
          AND ($5::text IS NULL OR l.lang = $5)
     ),
     vec AS (
-      SELECT id, ROW_NUMBER() OVER (ORDER BY embedding <=> $2::vector) AS rank
-        FROM filtered
-       WHERE $2::vector IS NOT NULL
-       ORDER BY embedding <=> $2::vector
-       LIMIT $6
+      ${vecSql}
     ),
     lex AS (
       SELECT id, ROW_NUMBER() OVER (ORDER BY ts_rank(tsv, q) DESC) AS rank
@@ -97,20 +133,25 @@ export async function search(opts: SearchOptions): Promise<SearchHit[]> {
         ) u
        GROUP BY id
     )
-    SELECT f.path, f.start_line, f.end_line, f.symbol, f.kind, f.parent_chain,
-           f.lang, f.raw_text, fu.score::text AS score, fu.in_vec, fu.in_lex,
+    -- Достаём тексты по первичному ключу локации, а НЕ через filtered:
+    -- CTE filtered материализуется (на неё ссылается лексическая ветка),
+    -- и join с ней возвращал бы полный проход по всем локациям репозитория
+    -- ради полусотни строк — на 40k чанков это стоило ~80 мс.
+    SELECT l.path, l.start_line, l.end_line, l.symbol, l.kind, l.parent_chain,
+           l.lang, c.raw_text, fu.score::text AS score, fu.in_vec, fu.in_lex,
            -- RRF задаёт порядок, но его шкала (1/(k+rank)) ничего не говорит
            -- о том, релевантен ли результат вообще. Косинус говорит.
            CASE WHEN $2::vector IS NULL THEN NULL
-                ELSE (1 - (f.embedding <=> $2::vector))::text
+                ELSE (1 - (c.embedding <=> $2::vector))::text
            END AS sim
       FROM fused fu
-      JOIN filtered f ON f.id = fu.id
-     ORDER BY fu.score * (CASE WHEN f.kind = 'file_card' THEN $12::float8 ELSE 1 END) DESC
+      JOIN chunk_locations l ON l.id = fu.id
+      JOIN chunks c ON c.content_hash = l.content_hash
+     ORDER BY fu.score DESC
      LIMIT $9
   `
 
-  const { rows } = await db().query<Row>(sql, [
+  const params = [
     opts.repo,
     vecLiteral,
     opts.query,
@@ -119,12 +160,20 @@ export async function search(opts: SearchOptions): Promise<SearchHit[]> {
     candidates,
     useLex,
     rrfK,
-    // Берём с запасом: диверсификация ниже отбросит лишние чанки одного файла.
-    Math.max(k * 4, 40),
+    // Берём с запасом: приоритеты и диверсификация ниже отбросят часть кандидатов.
+    Math.max(k * 6, 60),
     cfg.search.vectorWeight,
     cfg.search.lexicalWeight,
-    cfg.search.fileCardPrior,
-  ])
+  ]
+
+  // ef_search задаётся на сессию, поэтому запрос идёт в транзакции с SET LOCAL:
+  // иначе настройка утекала бы на соседние запросы из того же пула.
+  // 200 — измеренный компромисс: при 40 (умолчание pgvector) выдача совпадает
+  // с точной лишь на 69%, при 600 совпадает полностью, но стоит уже 80 мс.
+  const { rows } = await tx(async (c) => {
+    if (!filtered) await c.query(`SET LOCAL hnsw.ef_search = ${cfg.search.efSearch}`)
+    return c.query<Row>(sql, params)
+  })
 
   const hits: SearchHit[] = rows.map((r) => ({
     path: r.path,
@@ -140,7 +189,15 @@ export async function search(opts: SearchOptions): Promise<SearchHit[]> {
     via: r.in_vec && r.in_lex ? 'both' : r.in_vec ? 'vector' : 'lexical',
   }))
 
-  return diversify(hits, k, maxPerFile)
+  // Приоритеты применяются здесь, а не в SQL: шаблоны путей — это glob, который
+  // в SQL выражается плохо, а список штрафов задаётся конфигом пользователя.
+  const priors = compilePriors(cfg)
+  const ranked = hits
+    .map((h) => ({ h, s: h.score * priors.apply(h) }))
+    .sort((a, b) => b.s - a.s)
+    .map(({ h, s }) => ({ ...h, score: s }))
+
+  return diversify(ranked, k, maxPerFile)
 }
 
 /**

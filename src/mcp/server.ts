@@ -8,6 +8,7 @@ import { search, findSimilar, type SearchMode } from '../store/search.js'
 import { status } from '../store/schema.js'
 import { db } from '../store/pool.js'
 import { formatHits } from './format.js'
+import { renderRepoMap, type DirRow } from './repomap.js'
 
 /**
  * MCP-сервер поверх индекса. Транспорт — stdio, поэтому сетевого surface нет вовсе.
@@ -143,19 +144,32 @@ export function buildServer(): McpServer {
       description:
         'Обзор каталогов с количеством файлов и списком экспортируемых символов. Используйте ' +
         'для ориентации в незнакомом проекте ПЕРЕД тем, как искать конкретику: понять, какие ' +
-        'вообще есть пакеты и за что каждый отвечает.',
+        'вообще есть пакеты и за что каждый отвечает. Выдача ограничена бюджетом: если каталогов ' +
+        'много, сузьте область через path_prefix.',
       inputSchema: {
         repo: z.string().optional(),
         path_prefix: z.string().optional().describe('Ограничить поддеревом, например packages/'),
         depth: z.number().int().min(1).max(5).optional().describe('Глубина группировки, по умолчанию 2'),
+        max_tokens: z
+          .number()
+          .int()
+          .min(200)
+          .max(20000)
+          .optional()
+          .describe('Бюджет ответа в токенах, по умолчанию 4000'),
       },
     },
-    async ({ repo, path_prefix, depth }) => {
+    async ({ repo, path_prefix, depth, max_tokens }) => {
       const d = depth ?? 2
-      const { rows } = await db().query<{ dir: string; files: number; symbols: string[] }>(
+      const { rows } = await db().query<DirRow>(
         `SELECT array_to_string((string_to_array(l.path, '/'))[1:$3], '/') AS dir,
                 count(DISTINCT l.path)::int                                AS files,
-                (array_agg(DISTINCT l.symbol) FILTER (WHERE l.exported AND l.symbol IS NOT NULL))[1:25] AS symbols
+                -- Для кода это экспорты, для документации — заголовки документов
+                -- (карточка md несёт title в symbol). Оба отвечают на один вопрос:
+                -- «что тут вообще есть».
+                (array_agg(DISTINCT l.symbol)
+                   FILTER (WHERE l.symbol IS NOT NULL
+                             AND (l.exported OR l.kind = 'file_card')))[1:40] AS symbols
            FROM chunk_locations l
            JOIN repos r ON r.id = l.repo_id
           WHERE r.name = $1
@@ -165,13 +179,8 @@ export function buildServer(): McpServer {
         [repo ?? defaultRepo, path_prefix ?? null, d],
       )
 
-      if (!rows.length) return text('Индекс пуст или репозиторий не найден.')
-
-      const out = rows.map(
-        (r) =>
-          `${r.dir}/  (${r.files} файлов)\n  экспорт: ${(r.symbols ?? []).join(', ') || '—'}`,
-      )
-      return text(out.join('\n'))
+      const normalized = rows.map((r) => ({ ...r, symbols: r.symbols ?? [] }))
+      return text(renderRepoMap(normalized, max_tokens ?? cfg.search.tokenBudget))
     },
   )
 

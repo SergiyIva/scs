@@ -83,7 +83,7 @@ export async function indexRepo(repo: RepoConfig, opts: IndexOptions = {}): Prom
       continue
     }
 
-    const check = looksIndexable(text, bytes)
+    const check = looksIndexable(text, bytes, f.path)
     if (!check.ok) {
       report.skipped++
       continue

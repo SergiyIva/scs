@@ -29,6 +29,34 @@ const PREFIX = {
   document: 'title: none | text: ',
 } as const
 
+/**
+ * Схлопывание пробельных серий перед подачей в модель.
+ *
+ * Не косметика, а обход измеренного узкого места. На настоящих чанках кода
+ * (946 символов, 30 строк в среднем) Ollama 0.13.5 выдаёт 1.9 чанка/с, при этом
+ * GPU загружен на 1–10%, а рантайм жжёт ~300% CPU: время съедает подготовка
+ * входа, а не инференс. Виноваты именно серии пробельных символов — отступы
+ * и переносы. Замер на одном и том же наборе чанков:
+ *
+ *   как есть               1.9 чанк/с
+ *   переносы → пробел      2.9 чанк/с   (отступы остаются — почти не помогает)
+ *   схлопнуть все серии   91.3 чанк/с   (×48)
+ *
+ * Для монорепы это разница между «индексация 10 минут» и «индексация 7 часов»,
+ * то есть между выполненным и невыполненным критерием §1.
+ *
+ * Нормализация живёт здесь, а не в чанкере, по той же причине, что и префиксы:
+ * это свойство бэкенда, и вызывающий код не должен уметь про неё забыть. Режим
+ * входит в возвращаемый model, поэтому его переключение автоматически обесценивает
+ * индекс (content_hash считается от model_id) и не смешивает несравнимые вектора.
+ */
+const COLLAPSE_WS = (process.env.SCS_EMBED_WS ?? 'collapse') === 'collapse'
+const MODEL_ID = COLLAPSE_WS ? `${MODEL}+ws` : MODEL
+
+function forModel(text: string): string {
+  return COLLAPSE_WS ? text.replace(/\s+/g, ' ').trim() : text
+}
+
 /** Оценка только для флага truncated; истину знает токенизатор модели. */
 const CHARS_PER_TOKEN = 3.2
 
@@ -86,7 +114,7 @@ const server = createServer(async (req, res) => {
     if (req.method === 'GET' && req.url === '/health') {
       return send(200, {
         backend: 'ollama',
-        model: MODEL,
+        model: MODEL_ID,
         dims: DIMS,
         maxTokens: MAX_TOKENS,
         ready: true,
@@ -109,10 +137,10 @@ const server = createServer(async (req, res) => {
         return send(400, { error: `эта модель отдаёт ${DIMS} измерений, запрошено ${body.dims}` })
       }
       if (inputs.length === 0) {
-        return send(200, { vectors: [], model: MODEL, dims: DIMS, normalized: true, truncated: [] })
+        return send(200, { vectors: [], model: MODEL_ID, dims: DIMS, normalized: true, truncated: [] })
       }
 
-      const prefixed = (inputs as string[]).map((s) => PREFIX[kind] + s)
+      const prefixed = (inputs as string[]).map((s) => forModel(PREFIX[kind] + s))
       const raw = await ollamaEmbed(prefixed)
 
       for (const [i, v] of raw.entries()) {
@@ -123,7 +151,7 @@ const server = createServer(async (req, res) => {
 
       return send(200, {
         vectors: raw.map(l2normalize),
-        model: MODEL,
+        model: MODEL_ID,
         dims: DIMS,
         normalized: true,
         // Оценка по символам: Ollama не отдаёт токены по каждому входу отдельно.

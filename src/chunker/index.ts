@@ -1,30 +1,31 @@
-import type { RawChunk, FileChunks, ChunkKind } from '../types.js'
-import { estimateTokens, truncateToTokens } from '../util/tokens.js'
-import { buildHeader } from './enrich.js'
+import type { FileChunks } from '../types.js'
+import { estimateTokens } from '../util/tokens.js'
 import { parseFile, langFor, type Candidate } from './typescript.js'
+import { assemble, type Piece } from './pieces.js'
+import { chunkMarkdown, isMarkdown } from './markdown.js'
+import type { ChunkBudget } from './budget.js'
 
-export interface ChunkBudget {
-  minTokens: number
-  targetTokens: number
-  maxTokens: number
-  headerBudget: number
-}
+export type { ChunkBudget }
 
-/** Потолок модели EmbeddingGemma. Заголовок + код обязаны влезть сюда целиком. */
-const MODEL_CONTEXT = 2048
-
-interface Piece {
-  text: string
-  startLine: number
-  endLine: number
-  symbol: string | null
-  kind: ChunkKind
-  parentChain: string[]
-  exported: boolean
-  doc: string | null
-}
-
+/**
+ * Точка входа чанкера: выбирает языковой разборщик по расширению.
+ *
+ * Markdown вынесен отдельно не из аккуратности, а потому что режется по другой
+ * оси: у прозы нет AST, зато есть иерархия заголовков, и она несёт ровно тот же
+ * смысл, что цепочка родителей у метода класса.
+ */
 export function chunkFile(
+  repo: string,
+  path: string,
+  text: string,
+  blobSha: string,
+  budget: ChunkBudget,
+): FileChunks {
+  if (isMarkdown(path)) return chunkMarkdown(repo, path, text, blobSha, budget)
+  return chunkCode(repo, path, text, blobSha, budget)
+}
+
+function chunkCode(
   repo: string,
   path: string,
   text: string,
@@ -54,7 +55,10 @@ export function chunkFile(
   const preamble = preambleText(text, candidates, lineOf)
   if (preamble && estimateTokens(preamble.text) >= budget.minTokens) {
     pieces.push({
-      text: truncateToTokens(preamble.text, budget.maxTokens),
+      // Не обрезаем: длинную шапку разрежет splitToFit по контексту модели.
+      // Обрезка здесь означала бы, что часть кода не попала в индекс и её
+      // нельзя найти ничем, при этом никто об этом не узнает.
+      text: preamble.text,
       startLine: preamble.startLine,
       endLine: preamble.endLine,
       symbol: null,
@@ -79,39 +83,7 @@ export function chunkFile(
 
   const all: Piece[] = card ? [card, ...merged] : merged
 
-  const chunks: RawChunk[] = all.map((p) => {
-    const header = buildHeader(
-      {
-        repo,
-        path,
-        exports,
-        imports,
-        parentChain: p.parentChain,
-        symbol: p.symbol,
-        kind: p.kind,
-        doc: p.doc,
-      },
-      budget.headerBudget,
-    )
-    const headerTokens = estimateTokens(header)
-    const codeBudget = MODEL_CONTEXT - headerTokens - 8
-    const code = truncateToTokens(p.text, codeBudget)
-    const embedText = `${header}\n${code}`
-
-    return {
-      embedText,
-      rawText: p.text,
-      startLine: p.startLine,
-      endLine: p.endLine,
-      symbol: p.symbol,
-      kind: p.kind,
-      parentChain: p.parentChain,
-      exported: p.exported,
-      tokenCount: estimateTokens(embedText),
-    }
-  })
-
-  return { path, lang, blobSha, chunks }
+  return { path, lang, blobSha, chunks: assemble({ repo, path, exports, imports }, all, budget) }
 }
 
 function toPiece(c: Candidate, body: string, lineOf: (o: number) => number): Piece {
@@ -209,6 +181,14 @@ function mergeSmall(pieces: Piece[], budget: ChunkBudget): Piece[] {
 
   for (const p of pieces) {
     const prev = out[out.length - 1]
+    // Условие смотрит только на предыдущий кусок намеренно.
+    //
+    // Пробовали сливать, если мал любой из двух: слияние пошло цепочкой и
+    // склеило preamble с двумя функциями подряд, потому что после каждого слияния
+    // следующий мелкий сосед снова проходил проверку. Проблему мелких чанков
+    // (заголовок весит больше кода) решает пропорциональный заголовок
+    // в buildHeader, а не более жадное слияние: склейка ломает поиск по
+    // отдельным символам, который сейчас работает.
     const canMerge =
       prev &&
       estimateTokens(prev.text) < budget.minTokens &&
