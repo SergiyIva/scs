@@ -41,7 +41,10 @@ export interface SearchHit {
   parentChain: string[]
   lang: string
   rawText: string
+  /** Ранг после RRF-слияния. Задаёт порядок, но не годится для оценки релевантности. */
   score: number
+  /** Косинусная близость к запросу: вот по ней видно, релевантен ли результат. */
+  sim: number | null
   /** Из какой половины гибрида пришёл результат — для отладки ранжирования. */
   via: 'vector' | 'lexical' | 'both'
 }

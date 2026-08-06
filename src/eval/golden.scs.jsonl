@@ -1,0 +1,24 @@
+{"q": "как переиспользуются вектора при переключении веток", "expect": ["src/store/chunks.ts::missingHashes"]}
+{"q": "почему префиксы модели живут в сервисе а не в клиенте", "expect": ["services/embed-ollama/server.ts", "services/embed-ollama/server.ts::PREFIX"]}
+{"q": "что делать если батч не влез в память ускорителя", "expect": ["src/embed/client.ts::embedBatch"]}
+{"q": "как определяется что файл бинарный или сгенерированный", "expect": ["src/indexer/deny.ts::looksIndexable"]}
+{"q": "откуда берётся список файлов без чтения их содержимого", "expect": ["src/indexer/git.ts::listFiles"]}
+{"q": "новые файлы которые ещё не добавлены в гит", "expect": ["src/indexer/git.ts::listUntracked"]}
+{"q": "слияние результатов двух способов поиска", "expect": ["src/store/search.ts::search"]}
+{"q": "чтобы в выдаче не было пяти кусков одного файла", "expect": ["src/store/search.ts::diversify"]}
+{"q": "разворачивание camelCase в отдельные слова", "expect": ["migrations/002_fts.sql", "src/chunker/enrich.ts::pathWords"]}
+{"q": "что происходит с функцией которая слишком большая", "expect": ["src/chunker/index.ts::splitOversized"]}
+{"q": "склейка мелких объявлений в один кусок", "expect": ["src/chunker/index.ts::mergeSmall"]}
+{"q": "сборка описания модуля со списком экспортов", "expect": ["src/chunker/index.ts::fileCard"]}
+{"q": "текст который видит модель но не видит человек", "expect": ["src/chunker/enrich.ts::buildHeader"]}
+{"q": "ограничение размера ответа чтобы не сжечь контекст", "expect": ["src/mcp/format.ts::formatHits"]}
+{"q": "удаление данных на которые больше никто не ссылается", "expect": ["src/store/chunks.ts::gc"]}
+{"q": "применение неприменённых миграций по порядку", "expect": ["src/store/schema.ts::migrate"]}
+{"q": "подсчёт recall и MRR по набору запросов", "expect": ["src/eval/run.ts::evaluate"]}
+{"q": "замена всех кусков файла целиком вместо построчной дельты", "expect": ["src/store/chunks.ts::replaceLocations"]}
+{"q": "приблизительная оценка количества токенов", "expect": ["src/util/tokens.ts::estimateTokens"]}
+{"q": "почему идентификатор модели входит в хэш", "expect": ["src/util/hash.ts::chunkHash"]}
+{"q": "detect React component in TSX file", "expect": ["src/chunker/typescript.ts::isComponent"]}
+{"q": "extract first line of JSDoc comment", "expect": ["src/chunker/typescript.ts::extractDoc"]}
+{"q": "l2 normalize embedding vector", "expect": ["services/embed-ollama/server.ts::l2normalize"]}
+{"q": "transaction helper that always releases the client", "expect": ["src/store/pool.ts::tx"]}

@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "code-search": {
+      "command": "node",
+      "args": ["./dist/src/bin/scs-mcp.js"],
+      "env": {
+        "SCS_REPO": "scs"
+      }
+    }
+  }
+}

@@ -50,9 +50,9 @@ export function chunkFile(
     for (const part of splitOversized(c, body, budget, lineOf)) pieces.push(part)
   }
 
-  // 2. Всё, что не покрыто кандидатами (импорты, константы, side-effect код).
-  const preamble = uncoveredText(text, candidates)
-  if (estimateTokens(preamble.text) >= budget.minTokens) {
+  // 2. Шапка файла: импорты, константы и side-effect код до первого объявления.
+  const preamble = preambleText(text, candidates, lineOf)
+  if (preamble && estimateTokens(preamble.text) >= budget.minTokens) {
     pieces.push({
       text: truncateToTokens(preamble.text, budget.maxTokens),
       startLine: preamble.startLine,
@@ -64,6 +64,10 @@ export function chunkFile(
       doc: null,
     })
   }
+
+  // Куски обязаны идти в порядке файла: mergeSmall склеивает только соседей,
+  // а preamble добавлен последним, хотя физически стоит первым.
+  pieces.sort((a, b) => a.startLine - b.startLine || a.endLine - b.endLine)
 
   // 3. Слияние мелочи: двадцать однострочных экспортов из index.ts должны стать
   //    одним чанком, а не двадцатью бесполезными векторами.
@@ -172,27 +176,30 @@ function splitOversized(
   }))
 }
 
-/** Текст файла за вычетом уже покрытых кандидатами диапазонов. */
-function uncoveredText(
+/**
+ * Шапка файла — всё до первого объявления: импорты, константы, side-effect код.
+ *
+ * Раньше здесь склеивались ВСЕ непокрытые промежутки (включая пустые строки между
+ * функциями), а номера строк возвращались от первого из них. Диапазон получался
+ * заведомо ложным. Промежутки между объявлениями смысла всё равно не несут,
+ * поэтому берём только непрерывный кусок в начале файла и его настоящие границы.
+ */
+function preambleText(
   text: string,
   candidates: Candidate[],
-): { text: string; startLine: number; endLine: number } {
-  if (!candidates.length) {
-    return { text: text.trim(), startLine: 1, endLine: text.split('\n').length }
-  }
-  const covered = candidates.map((c) => [c.start, c.end] as const).sort((a, b) => a[0] - b[0])
-  const out: string[] = []
-  let cursor = 0
-  for (const [s, e] of covered) {
-    if (s > cursor) out.push(text.slice(cursor, s))
-    cursor = Math.max(cursor, e)
-  }
-  if (cursor < text.length) out.push(text.slice(cursor))
+  lineOf: (o: number) => number,
+): { text: string; startLine: number; endLine: number } | null {
+  const firstStart = candidates.length
+    ? Math.min(...candidates.map((c) => c.start))
+    : text.length
+
+  const head = text.slice(0, firstStart).trim()
+  if (!head) return null
 
   return {
-    text: out.join('\n').replace(/\n{3,}/g, '\n\n').trim(),
+    text: head,
     startLine: 1,
-    endLine: text.slice(0, covered[0]![0]).split('\n').length,
+    endLine: Math.max(1, lineOf(firstStart) - 1),
   }
 }
 
@@ -209,11 +216,14 @@ function mergeSmall(pieces: Piece[], budget: ChunkBudget): Piece[] {
       prev.kind !== 'file_card' &&
       p.kind !== 'file_card' &&
       // Не сливаем через границу класса: контексты разные.
-      prev.parentChain.join('>') === p.parentChain.join('>')
+      prev.parentChain.join('>') === p.parentChain.join('>') &&
+      // Только физических соседей: склейка кусков из разных концов файла
+      // даёт диапазон строк, не соответствующий ничему.
+      p.startLine >= prev.startLine
 
     if (canMerge) {
       prev.text = `${prev.text}\n\n${p.text}`
-      prev.endLine = p.endLine
+      prev.endLine = Math.max(prev.endLine, p.endLine)
       prev.symbol = [prev.symbol, p.symbol].filter(Boolean).join(', ') || null
       prev.exported = prev.exported || p.exported
       prev.doc ??= p.doc
@@ -237,7 +247,9 @@ function fileCard(
 ): Piece | null {
   if (!exports.length && !imports.length) return null
 
-  const topDoc = /^\s*\/\*\*([\s\S]*?)\*\//.exec(text)
+  // JSDoc модуля часто идёт после блока импортов, а не с первого символа файла,
+  // поэтому ищем первый /** */ в начальном фрагменте, а не строго в позиции 0.
+  const topDoc = /\/\*\*([\s\S]*?)\*\//.exec(text.slice(0, 3000))
   const summary = topDoc?.[1]
     ?.split('\n')
     .map((l) => l.replace(/^\s*\*?\s?/, '').trim())

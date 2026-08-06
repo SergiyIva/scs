@@ -17,7 +17,7 @@ const RepoConfig = z.object({
 // внутренних полей не применились бы и cfg.embed.url оказался бы undefined.
 // .prefault() подставляет значение ДО парсинга и восстанавливает поведение v3.
 const ConfigSchema = z.object({
-  pg: z.string().default('postgres://scs:scs@127.0.0.1:5440/scs'),
+  pg: z.string().default('postgres://scs:scs@127.0.0.1:5434/scs'),
   embed: z
     .object({
       url: z.string().default('http://127.0.0.1:8077'),
@@ -38,10 +38,25 @@ const ConfigSchema = z.object({
   search: z
     .object({
       topK: z.number().int().positive().default(8),
+      // Умолчание — чистый вектор, а не гибрид. Это ИЗМЕРЕНО, а не выбрано:
+      // на трёх golden-наборах (см. docs/DESIGN.md §9) лексическая ветка ни разу
+      // не выиграла и дважды заметно проиграла, в том числе на наборе из одних
+      // идентификаторов, где она обязана была быть сильной.
+      // Пересмотреть после замера на настоящей монорепе: там у вектора будет
+      // на порядки больше поводов запутаться.
+      defaultMode: z.enum(['hybrid', 'semantic', 'lexical']).default('semantic'),
       candidates: z.number().int().positive().default(50),
       rrfK: z.number().int().positive().default(60),
       maxPerFile: z.number().int().positive().default(2),
       tokenBudget: z.number().int().positive().default(4000),
+      // Вес ветвей при RRF-слиянии. Лексика ниже вектора: она хорошо ловит
+      // точные идентификаторы, но на запросе в свободной форме шумит.
+      vectorWeight: z.number().positive().default(1),
+      lexicalWeight: z.number().positive().default(0.5),
+      // Карточка файла — синтезированная нами сводка, а не код. Она короткая и
+      // плотно набита идентификаторами, поэтому ts_rank её систематически
+      // переоценивает и она вытесняет настоящую реализацию из топа.
+      fileCardPrior: z.number().positive().default(0.6),
     })
     .prefault({}),
   repos: z.array(RepoConfig).default([]),

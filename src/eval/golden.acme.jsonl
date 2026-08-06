@@ -1,0 +1,14 @@
+{"q": "где обрабатывается повторная отправка платежа", "expect": ["packages/queue/src/backoff.ts::scheduleRedelivery"]}
+{"q": "как считается задержка перед следующей попыткой", "expect": ["packages/queue/src/backoff.ts::nextInterval", "packages/queue/src/backoff.ts::scheduleRedelivery"]}
+{"q": "куда девается платёж после исчерпания попыток", "expect": ["packages/queue/src/backoff.ts::scheduleRedelivery"]}
+{"q": "что вызывается когда провайдер сообщает об исходе операции", "expect": ["packages/payments/src/gateway.ts::handleWebhook"]}
+{"q": "как помечается успешно проведённая оплата", "expect": ["packages/payments/src/gateway.ts::markSettled"]}
+{"q": "выпуск ключа для вызовов между сервисами", "expect": ["packages/auth/src/tokens.ts::signInternal"]}
+{"q": "проверка подлинности служебного ключа", "expect": ["packages/auth/src/tokens.ts::verifyInternal"]}
+{"q": "валидация телефона при регистрации", "expect": ["apps/web/src/forms/signup.ts::phoneRule"]}
+{"q": "проверка корректности адреса электронной почты", "expect": ["apps/web/src/forms/signup.ts::emailRule"]}
+{"q": "экран ввода данных карты перед подтверждением заказа", "expect": ["apps/web/src/forms/CheckoutForm.tsx::CheckoutForm"]}
+{"q": "повторная доставка сообщения после паузы", "expect": ["packages/notify/src/dispatch.ts::requeueUndelivered"]}
+{"q": "структура данных описывающая денежную операцию", "expect": ["packages/payments/src/types.ts::Payment"]}
+{"q": "постановка задачи в очередь с отложенным запуском", "expect": ["packages/queue/src/client.ts::queue", "packages/queue/src/client.ts"]}
+{"q": "exponential backoff implementation", "expect": ["packages/queue/src/backoff.ts::nextInterval", "packages/queue/src/backoff.ts::scheduleRedelivery", "packages/notify/src/dispatch.ts::requeueUndelivered"]}

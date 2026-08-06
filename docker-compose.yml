@@ -1,3 +1,7 @@
+# НЕОБЯЗАТЕЛЬНО. По умолчанию scs ходит во внешний инстанс pgvector на 127.0.0.1:5434
+# (см. pg в конфиге) — там заведены отдельные роль и БД "scs", изолированные от
+# остальных данных инстанса. Этот compose нужен только если своего Postgres нет:
+#   docker compose up -d && SCS_PG=postgres://scs:scs@127.0.0.1:5440/scs scs migrate
 services:
   db:
     image: pgvector/pgvector:pg18
