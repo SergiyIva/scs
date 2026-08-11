@@ -27,7 +27,23 @@ export interface ModeResult {
   misses: { q: string; expect: string[]; got: string[] }[]
 }
 
-export function loadGolden(path: string): GoldenEntry[] {
+/**
+ * Отложенный набор запечатан на уровне загрузки, а не отдельной команды.
+ *
+ * Первая версия проверяла печать только в `scs eval`, и `scs depth --golden
+ * ...holdout...` её обходил. Защита, которую можно обойти соседней командой,
+ * защитой не является: набор открывается один раз, после заморозки, и любой
+ * прогон «просто посмотреть» превращает его в настроечный.
+ */
+export function loadGolden(path: string, opts: { unseal?: boolean } = {}): GoldenEntry[] {
+  if (/holdout/i.test(path) && !opts.unseal) {
+    throw new Error(
+      `${path} — отложенный набор, он запечатан.\n` +
+        `Открывается один раз, после заморозки чанк-схемы и параметров, ` +
+        `и с заранее объявленным порогом качества (docs/RECALL85.md §4.2).\n` +
+        `Если это тот самый раз — добавьте --unseal.`,
+    )
+  }
   return readFileSync(path, 'utf8')
     .split('\n')
     .filter((l) => l.trim() && !l.trimStart().startsWith('//'))
@@ -46,6 +62,10 @@ function hitKey(h: SearchHit): string[] {
     // Слитые чанки несут несколько символов через запятую.
     for (const s of h.symbol.split(',')) keys.push(`${h.path}::${s.trim()}`)
   }
+  // Класс, не влезший в maxTokens, чанкуется по методам: его имя оказывается
+  // в parentChain, а не в symbol. Найти метод такого класса — значит найти класс,
+  // иначе набор наказывает нас за размер файла, а не за качество поиска.
+  for (const parent of h.parentChain) keys.push(`${h.path}::${parent}`)
   return keys
 }
 
@@ -63,6 +83,7 @@ export async function evaluate(
   golden: GoldenEntry[],
   mode: SearchMode,
   k = 10,
+  rerank?: boolean,
 ): Promise<ModeResult> {
   let hit1 = 0
   let hit5 = 0
@@ -73,7 +94,7 @@ export async function evaluate(
 
   for (const entry of golden) {
     const t0 = Date.now()
-    const hits = await search({ repo, query: entry.q, k, mode, maxPerFile: 99 })
+    const hits = await search({ repo, query: entry.q, k, mode, maxPerFile: 99, rerank })
     times.push(Date.now() - t0)
 
     const rank = rankOfFirstHit(hits, entry.expect)
@@ -146,10 +167,13 @@ export function formatResults(results: ModeResult[], total: number): string {
     }
   }
 
-  const target = 0.85
-  if (hybrid && hybrid.recallAt5 < target) {
+  // 85% — исследовательский ориентир, а НЕ порог выпуска: измеренного пути к нему
+  // в архитектуре чистого retrieval нет (docs/RECALL85.md §4.2). Порог качества
+  // задаётся отдельно и заранее, до открытия отложенного набора.
+  const REFERENCE = 0.85
+  if (hybrid && hybrid.recallAt5 < REFERENCE) {
     out.push(
-      `\nRecall@5 = ${pct(hybrid.recallAt5)} при целевых ${pct(target)}. ` +
+      `\nRecall@5 = ${pct(hybrid.recallAt5)} при ориентире ${pct(REFERENCE)}. ` +
         `Смотрите промахи выше, а не общий процент.`,
     )
   }

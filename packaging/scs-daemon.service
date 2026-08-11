@@ -1,0 +1,24 @@
+[Unit]
+Description=scs — инкрементальная индексация кода для семантического поиска
+# Postgres и эмбеддер поднимаются в docker; без них демон стартует, но будет
+# ругаться в лог до тех пор, пока они не появятся.
+After=network.target docker.service
+
+[Service]
+Type=simple
+# %h — домашний каталог пользователя, юнит ставится в ~/.config/systemd/user/
+WorkingDirectory=%h/WebstormProjects/embedded-project
+ExecStart=/usr/bin/env node dist/src/bin/scs-daemon.js
+Restart=on-failure
+RestartSec=5
+# Демон переживает временную недоступность БД и эмбеддера, но не бесконечно:
+# если он падает по кругу, лучше остановиться и оставить след в journalctl.
+StartLimitIntervalSec=300
+StartLimitBurst=5
+
+Environment=NODE_ENV=production
+# Раскомментируйте, если конфиг лежит не в ~/.config/scs/config.json
+# Environment=SCS_CONFIG=%h/.config/scs/config.json
+
+[Install]
+WantedBy=default.target

@@ -19,15 +19,38 @@ const DIMS = 768
 const MAX_TOKENS = 2048
 
 /**
- * Асимметричные префиксы EmbeddingGemma. Перепутать их местами — самый дешёвый
- * способ незаметно обрушить recall, поэтому они заданы здесь один раз.
- * Альтернатива для запросов, которую стоит проверить в Ф2:
- *   'task: code retrieval | query: '
+ * Префиксы у каждой модели свои, и они не взаимозаменяемы.
+ *
+ * Перепутать их местами — самый дешёвый способ незаметно обрушить recall,
+ * поэтому таблица задана здесь один раз и выбирается по имени модели.
+ * У EmbeddingGemma префиксы асимметричны, у Qwen3 запрос оформляется
+ * инструкцией, а документ идёт как есть, а jina-v2-base-code симметрична
+ * и никаких префиксов не хочет вовсе.
+ *
+ * Модель, которой нет в таблице, запускать нельзя: молчаливый прогон без
+ * префиксов — это как раз тот тихий отказ, ради которого таблица и заведена.
  */
-const PREFIX = {
-  query: process.env.SCS_QUERY_PREFIX ?? 'task: search result | query: ',
-  document: 'title: none | text: ',
-} as const
+const PREFIXES: Record<string, { query: string; document: string }> = {
+  'embeddinggemma:300m': {
+    // Альтернатива 'task: code retrieval | query: ' проверена и отвергнута (§15).
+    query: 'task: search result | query: ',
+    document: 'title: none | text: ',
+  },
+  'qwen3-embedding:0.6b': {
+    query: 'Instruct: Given a question about a codebase, retrieve the code that answers it\nQuery: ',
+    document: '',
+  },
+  'unclemusclez/jina-embeddings-v2-base-code': { query: '', document: '' },
+}
+
+const PREFIX = PREFIXES[MODEL] ?? PREFIXES[MODEL.replace(/:latest$/, '')]
+if (!PREFIX) {
+  throw new Error(
+    `для модели ${MODEL} не заданы префиксы. Добавьте их в PREFIXES: запуск без ` +
+      `префиксов молча ухудшит качество, а не упадёт.`,
+  )
+}
+if (process.env.SCS_QUERY_PREFIX) PREFIX.query = process.env.SCS_QUERY_PREFIX
 
 /**
  * Схлопывание пробельных серий перед подачей в модель.
@@ -66,6 +89,22 @@ function l2normalize(v: number[]): number[] {
   const norm = Math.sqrt(sum)
   if (norm === 0 || !Number.isFinite(norm)) return v
   return v.map((x) => x / norm)
+}
+
+/**
+ * Matryoshka-усечение до размерности схемы.
+ *
+ * Схема БД фиксирует vector(768) (§5), а Qwen3-Embedding отдаёт 1024. Обе модели
+ * обучены с Matryoshka-представлением, поэтому первые 768 координат — это
+ * самостоятельный корректный вектор, но ТОЛЬКО после повторной нормализации:
+ * у усечённого вектора длина уже не единичная, и косинус перестаёт совпадать
+ * со скалярным произведением.
+ *
+ * Усечение — не бесплатная операция, и в A/B-сравнении моделей это работает
+ * против Qwen3. Если она выиграет даже так, вывод только крепче.
+ */
+function toSchemaDims(v: number[]): number[] {
+  return l2normalize(v.length > DIMS ? v.slice(0, DIMS) : v)
 }
 
 async function ollamaEmbed(inputs: string[]): Promise<number[][]> {
@@ -144,13 +183,13 @@ const server = createServer(async (req, res) => {
       const raw = await ollamaEmbed(prefixed)
 
       for (const [i, v] of raw.entries()) {
-        if (v.length !== DIMS) {
-          return send(500, { error: `вектор ${i} имеет ${v.length} измерений вместо ${DIMS}` })
+        if (v.length < DIMS) {
+          return send(500, { error: `вектор ${i} имеет ${v.length} измерений, меньше требуемых ${DIMS}` })
         }
       }
 
       return send(200, {
-        vectors: raw.map(l2normalize),
+        vectors: raw.map(toSchemaDims),
         model: MODEL_ID,
         dims: DIMS,
         normalized: true,

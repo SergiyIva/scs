@@ -20,9 +20,10 @@ export function chunkFile(
   text: string,
   blobSha: string,
   budget: ChunkBudget,
+  callers?: Map<string, string[]>,
 ): FileChunks {
   if (isMarkdown(path)) return chunkMarkdown(repo, path, text, blobSha, budget)
-  return chunkCode(repo, path, text, blobSha, budget)
+  return chunkCode(repo, path, text, blobSha, budget, callers)
 }
 
 function chunkCode(
@@ -31,9 +32,15 @@ function chunkCode(
   text: string,
   blobSha: string,
   budget: ChunkBudget,
+  callers?: Map<string, string[]>,
 ): FileChunks {
   const lang = langFor(path)
-  const { imports, exports, candidates, sourceFile } = parseFile(path, text, budget.maxTokens)
+  const { imports, exports, candidates, sourceFile, moduleDoc } = parseFile(
+    path,
+    text,
+    budget.maxTokens,
+    budget.minTokens,
+  )
 
   const lineOf = (offset: number) => sourceFile.getLineAndCharacterOfPosition(offset).line + 1
 
@@ -51,18 +58,21 @@ function chunkCode(
     for (const part of splitOversized(c, body, budget, lineOf)) pieces.push(part)
   }
 
-  // 2. Шапка файла: импорты, константы и side-effect код до первого объявления.
-  const preamble = preambleText(text, candidates, lineOf)
-  if (preamble && estimateTokens(preamble.text) >= budget.minTokens) {
+  // 2. Всё, что не покрыто ни одним кандидатом: шапка файла, код между
+  //    объявлениями, хвост после последнего.
+  for (const [i, gap] of uncoveredSpans(text, candidates).entries()) {
+    // Не обрезаем: длинный промежуток разрежет splitToFit по контексту модели.
+    // Обрезка здесь означала бы, что часть кода не попала в индекс и её нельзя
+    // найти ничем, при этом никто об этом не узнает.
     pieces.push({
-      // Не обрезаем: длинную шапку разрежет splitToFit по контексту модели.
-      // Обрезка здесь означала бы, что часть кода не попала в индекс и её
-      // нельзя найти ничем, при этом никто об этом не узнает.
-      text: preamble.text,
-      startLine: preamble.startLine,
-      endLine: preamble.endLine,
+      text: gap.text,
+      startLine: lineOf(gap.start),
+      endLine: lineOf(gap.end - 1),
       symbol: null,
-      kind: 'preamble',
+      // Первый непокрытый кусок — это шапка файла, даже если начинается
+      // не с нулевого смещения: обрезка ведущих пробелов сдвигает start,
+      // и сравнение с нулём молча переводило шапку в 'binding'.
+      kind: i === 0 && gap.isHead ? 'preamble' : 'binding',
       parentChain: [],
       exported: false,
       doc: null,
@@ -70,7 +80,7 @@ function chunkCode(
   }
 
   // Куски обязаны идти в порядке файла: mergeSmall склеивает только соседей,
-  // а preamble добавлен последним, хотя физически стоит первым.
+  // а промежутки добавлены последними, хотя физически стоят между кандидатами.
   pieces.sort((a, b) => a.startLine - b.startLine || a.endLine - b.endLine)
 
   // 3. Слияние мелочи: двадцать однострочных экспортов из index.ts должны стать
@@ -83,7 +93,12 @@ function chunkCode(
 
   const all: Piece[] = card ? [card, ...merged] : merged
 
-  return { path, lang, blobSha, chunks: assemble({ repo, path, exports, imports }, all, budget) }
+  return {
+    path,
+    lang,
+    blobSha,
+    chunks: assemble({ repo, path, exports, imports, moduleDoc, callers }, all, budget),
+  }
 }
 
 function toPiece(c: Candidate, body: string, lineOf: (o: number) => number): Piece {
@@ -96,6 +111,7 @@ function toPiece(c: Candidate, body: string, lineOf: (o: number) => number): Pie
     parentChain: c.parentChain,
     exported: c.exported,
     doc: c.doc,
+    parentDoc: c.parentDoc ?? null,
   }
 }
 
@@ -145,34 +161,55 @@ function splitOversized(
     parentChain: c.parentChain,
     exported: c.exported,
     doc: c.doc,
+    parentDoc: c.parentDoc ?? null,
   }))
 }
 
 /**
- * Шапка файла — всё до первого объявления: импорты, константы, side-effect код.
+ * Всё, что не попало ни в одного кандидата AST.
  *
- * Раньше здесь склеивались ВСЕ непокрытые промежутки (включая пустые строки между
- * функциями), а номера строк возвращались от первого из них. Диапазон получался
- * заведомо ложным. Промежутки между объявлениями смысла всё равно не несут,
- * поэтому берём только непрерывный кусок в начале файла и его настоящие границы.
+ * История этого места стоит комментария. Сначала здесь склеивались ВСЕ
+ * промежутки подряд, а номера строк брались от первого — диапазон получался
+ * заведомо ложным. Тогда это «починили», оставив только шапку файла, с доводом
+ * «промежутки между объявлениями смысла не несут». Довод оказался неверным:
+ * замер на целевой монорепе нашёл 6504 верхнеуровневых объявления вида
+ * `const X = new Schema(...)` и 2174 файла с `module.exports = {...}` — всё это
+ * молча не попадало в индекс. Найти такой код было нельзя ничем, и никакой
+ * ошибки при этом не возникало.
+ *
+ * Теперь покрываются все промежутки, но каждый — со своими настоящими границами.
+ * Мелкие (короче minTokens) приклеиваются к предыдущему куску, а не заводят
+ * отдельный бессмысленный вектор: они физически соседи, поэтому диапазон строк
+ * остаётся честным.
  */
-function preambleText(
+function uncoveredSpans(
   text: string,
   candidates: Candidate[],
-  lineOf: (o: number) => number,
-): { text: string; startLine: number; endLine: number } | null {
-  const firstStart = candidates.length
-    ? Math.min(...candidates.map((c) => c.start))
-    : text.length
+): { text: string; start: number; end: number; isHead: boolean }[] {
+  const sorted = [...candidates].sort((a, b) => a.start - b.start)
+  const spans: { start: number; end: number }[] = []
 
-  const head = text.slice(0, firstStart).trim()
-  if (!head) return null
-
-  return {
-    text: head,
-    startLine: 1,
-    endLine: Math.max(1, lineOf(firstStart) - 1),
+  let cursor = 0
+  for (const c of sorted) {
+    if (c.start > cursor) spans.push({ start: cursor, end: c.start })
+    cursor = Math.max(cursor, c.end)
   }
+  if (cursor < text.length) spans.push({ start: cursor, end: text.length })
+
+  const out: { text: string; start: number; end: number; isHead: boolean }[] = []
+  for (const s of spans) {
+    const raw = text.slice(s.start, s.end)
+    const trimmed = raw.trim()
+    if (!trimmed) continue
+    const lead = raw.length - raw.trimStart().length
+    out.push({
+      text: trimmed,
+      start: s.start + lead,
+      end: s.start + lead + trimmed.length,
+      isHead: s.start === 0,
+    })
+  }
+  return out
 }
 
 /** Жадно склеивает соседей ниже minTokens, пока не дойдёт до targetTokens. */
@@ -189,10 +226,20 @@ function mergeSmall(pieces: Piece[], budget: ChunkBudget): Piece[] {
     // (заголовок весит больше кода) решает пропорциональный заголовок
     // в buildHeader, а не более жадное слияние: склейка ломает поиск по
     // отдельным символам, который сейчас работает.
+    // Безымянный промежуток короче minTokens приклеивается к предыдущему куску
+    // независимо от его размера: отдельный вектор на `const A = 1` между двумя
+    // функциями — шум, а выбросить его нельзя, это потеря кода. Цепочки такое
+    // слияние не образует, потому что именованный кусок так не поглощается.
+    const isSmallGap =
+      p.symbol === null &&
+      (p.kind === 'binding' || p.kind === 'preamble') &&
+      estimateTokens(p.text) < budget.minTokens
+
     const canMerge =
       prev &&
-      estimateTokens(prev.text) < budget.minTokens &&
-      estimateTokens(prev.text) + estimateTokens(p.text) <= budget.targetTokens &&
+      (estimateTokens(prev.text) < budget.minTokens || isSmallGap) &&
+      estimateTokens(prev.text) + estimateTokens(p.text) <=
+        (isSmallGap ? budget.maxTokens : budget.targetTokens) &&
       prev.kind !== 'file_card' &&
       p.kind !== 'file_card' &&
       // Не сливаем через границу класса: контексты разные.
@@ -204,6 +251,10 @@ function mergeSmall(pieces: Piece[], budget: ChunkBudget): Piece[] {
     if (canMerge) {
       prev.text = `${prev.text}\n\n${p.text}`
       prev.endLine = Math.max(prev.endLine, p.endLine)
+      // Если поглощающий кусок безымянный (шапка, промежуток), а поглощаемый —
+      // объявление, то вид берём у объявления: чанк с функцией внутри не должен
+      // называться preamble ни в выдаче, ни в приоритетах ранжирования.
+      if (!prev.symbol && p.symbol) prev.kind = p.kind
       prev.symbol = [prev.symbol, p.symbol].filter(Boolean).join(', ') || null
       prev.exported = prev.exported || p.exported
       prev.doc ??= p.doc

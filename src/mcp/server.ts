@@ -53,9 +53,16 @@ export function buildServer(): McpServer {
           .enum(['hybrid', 'semantic', 'lexical'])
           .optional()
           .describe('semantic по умолчанию (замерено как лучший); hybrid добавляет точные слова'),
+        include_history: z
+          .boolean()
+          .optional()
+          .describe(
+            'Искать и по удалённым файлам из истории git. Нужно для вопросов «а как это ' +
+              'было до рефакторинга»; в обычном поиске только мешает, поэтому выключено.',
+          ),
       },
     },
-    async ({ query, k, repo, path_glob, lang, mode }) => {
+    async ({ query, k, repo, path_glob, lang, mode, include_history }) => {
       const hits = await search({
         repo: repo ?? defaultRepo,
         query,
@@ -63,6 +70,7 @@ export function buildServer(): McpServer {
         mode: mode as SearchMode | undefined,
         pathGlob: path_glob,
         lang,
+        includeDeleted: include_history,
       })
       return text(formatHits(hits, cfg.search.tokenBudget))
     },
@@ -205,6 +213,9 @@ export function buildServer(): McpServer {
       return text(
         [
           `модель: ${cfg.embed.model} (${cfg.embed.backend})`,
+          // Реранкер меняет и качество, и время ответа втрое-тридцатикратно,
+          // поэтому его состояние стоит рядом с моделью, а не в отдельном месте.
+          `реранкер: ${cfg.search.rerank.enabled ? `включён, ${cfg.search.rerank.url}` : 'выключен'}`,
           `уникальных векторов: ${s.totalChunks}`,
           ...lines,
         ].join('\n'),

@@ -20,6 +20,8 @@ export interface Piece {
   parentChain: string[]
   exported: boolean
   doc: string | null
+  /** JSDoc класса для его методов (эксперимент B, RECALL85 §4.5). */
+  parentDoc?: string | null
 }
 
 /** Потолок модели EmbeddingGemma. Заголовок + текст обязаны влезть сюда целиком. */
@@ -32,6 +34,10 @@ export interface AssembleContext {
   exports: string[]
   /** Импортируемые модули (для Markdown — ссылки на соседние документы). */
   imports: string[]
+  /** Назначение файла: первая строка модульного JSDoc (эксперимент A). */
+  moduleDoc?: string | null
+  /** Кто вызывает символ чанка (эксперимент C). Ключ — имя символа. */
+  callers?: Map<string, string[]>
 }
 
 /** Заголовок обогащения + страховка по контексту модели → готовые чанки. */
@@ -41,12 +47,17 @@ export function assemble(ctx: AssembleContext, pieces: Piece[], budget: ChunkBud
       {
         repo: ctx.repo,
         path: ctx.path,
-        exports: ctx.exports,
-        imports: ctx.imports,
         parentChain: p.parentChain,
         symbol: p.symbol,
         kind: p.kind,
         doc: p.doc,
+        moduleDoc: budget.moduleDocInHeader === false ? null : (ctx.moduleDoc ?? null),
+        parentDoc: budget.classDocInHeader === false ? null : (p.parentDoc ?? null),
+        withPathWords: budget.pathWordsInHeader !== false,
+        callers:
+          budget.callersInHeader && p.symbol ? (ctx.callers?.get(p.symbol) ?? []) : [],
+        imports: budget.importsInHeader === false ? [] : ctx.imports,
+        exports: budget.exportsInHeader === false ? [] : ctx.exports,
       },
       budget.headerBudget,
       estimateTokens(p.text),

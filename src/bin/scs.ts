@@ -10,6 +10,12 @@ import { search, findSimilar, type SearchMode } from '../store/search.js'
 import { gc } from '../store/chunks.js'
 import { formatHits } from '../mcp/format.js'
 import { evaluate, formatResults, loadGolden } from '../eval/run.js'
+import { measureDepth, formatDepth } from '../eval/depth.js'
+import { exportChunks, importChunks } from '../store/transfer.js'
+import { indexHistory } from '../indexer/history.js'
+import { loadChains, measureCollapse, formatCollapse } from '../eval/collapse.js'
+import { checkIndex, formatHealth, indexProblems } from '../store/doctor.js'
+import { runAcceptance, formatAcceptance, FROZEN_THRESHOLDS } from '../eval/accept.js'
 
 const program = new Command()
 program.name('scs').description('Семантический поиск по коду').version('0.1.0')
@@ -111,11 +117,12 @@ program
   .option('-m, --mode <mode>', 'semantic | hybrid | lexical', '')
   .option('--path <glob>', 'фильтр по пути (SQL LIKE, например src/%)')
   .option('--lang <lang>', 'фильтр по языку')
+  .option('--history', 'искать и по удалённым файлам из истории git')
   .action(
     async (
       name: string,
       queryParts: string[],
-      opts: { top: string; mode: string; path?: string; lang?: string },
+      opts: { top: string; mode: string; path?: string; lang?: string; history?: boolean },
     ) => {
       const hits = await search({
         repo: name,
@@ -124,6 +131,7 @@ program
         mode: (opts.mode || undefined) as SearchMode | undefined,
         pathGlob: opts.path,
         lang: opts.lang,
+        includeDeleted: opts.history,
       })
       console.log(formatHits(hits, loadConfig().search.tokenBudget))
     },
@@ -146,14 +154,117 @@ program
   .description('измерить качество поиска на golden-наборе')
   .option('--golden <path>', 'файл .jsonl с запросами', '')
   .option('--mode <modes>', 'режимы через запятую', 'hybrid,semantic,lexical')
-  .action(async (name: string, opts: { golden: string; mode: string }) => {
+  .option('--unseal', 'открыть отложенный набор (только один раз, после заморозки конфигурации)')
+  .action(async (name: string, opts: { golden: string; mode: string; unseal?: boolean }) => {
     const path = opts.golden || `src/eval/golden.${name}.jsonl`
-    const golden = loadGolden(path)
+    const golden = loadGolden(path, { unseal: opts.unseal })
     const modes = opts.mode.split(',').map((m) => m.trim() as SearchMode)
 
     const results = []
     for (const mode of modes) results.push(await evaluate(name, golden, mode))
     console.log(formatResults(results, golden.length))
+  })
+
+program
+  .command('depth <repo>')
+  .description('ранг ожидаемого ответа в векторной выдаче: провал полноты или ранжирования')
+  .option('--golden <path>', 'файл .jsonl с запросами', '')
+  .option('--depth <n>', 'до какой глубины искать ответ', '300')
+  .option('--unseal', 'открыть отложенный набор')
+  .action(async (name: string, opts: { golden: string; depth: string; unseal?: boolean }) => {
+    const golden = loadGolden(opts.golden || `src/eval/golden.${name}.jsonl`, {
+      unseal: opts.unseal,
+    })
+    const depth = Number(opts.depth)
+    console.log(formatDepth([await measureDepth(name, golden, depth)], depth))
+  })
+
+program
+  .command('collapse <repo>')
+  .description('сколько вызовов инструментов заменяет один search_code (цепочки из транскриптов)')
+  .option('--chains <path>', 'файл .jsonl с цепочками', '')
+  .option('-k, --top <n>', 'глубина, на которой считаем цепочку схлопнувшейся', '5')
+  .action(async (name: string, opts: { chains: string; top: string }) => {
+    const chains = loadChains(opts.chains || `src/eval/chains.${name}.jsonl`)
+    const k = Number(opts.top)
+    console.log(formatCollapse(await measureCollapse(name, chains, k), k))
+  })
+
+program
+  .command('history <repo>')
+  .description('проиндексировать удалённые файлы из истории git (отдельный режим)')
+  .option('--depth <n>', 'сколько коммитов истории просматривать', '500')
+  .action(async (name: string, opts: { depth: string }) => {
+    const r = await indexHistory(findRepo(loadConfig(), name), {
+      depth: Number(opts.depth),
+      onProgress: (done, total, path) => {
+        if (done % 10 === 0 || done === total) {
+          process.stderr.write(`\r  ${done}/${total}  ${path.slice(-60).padEnd(60)}`)
+        }
+      },
+    })
+    process.stderr.write('\r'.padEnd(80) + '\r')
+    console.log(
+      [
+        `удалённых файлов найдено: ${r.candidates}`,
+        `проиндексировано: ${r.indexed}, пропущено: ${r.skipped}`,
+        `чанков: ${r.chunks} (векторов ${r.embedded}, переиспользовано ${r.reused})`,
+        `время: ${(r.ms / 1000).toFixed(1)} с`,
+        `Найденное помечается префиксом @deleted/ и понижается в ранжировании.`,
+      ].join('\n'),
+    )
+  })
+
+program
+  .command('export <file>')
+  .description('выгрузить посчитанные вектора для переноса на другую машину')
+  .option('--repo <name>', 'только чанки этого репозитория')
+  .option('--model <id>', 'только этой модели')
+  .action(async (file: string, opts: { repo?: string; model?: string }) => {
+    const s = await exportChunks(file, { repo: opts.repo, model: opts.model })
+    console.log(
+      `Выгружено чанков: ${s.chunks}, ${(s.bytes / 1024 / 1024).toFixed(1)} МБ, ` +
+        `${(s.ms / 1000).toFixed(1)} с\nЛокации там не нужны: на новой машине их пересоберёт scs index.`,
+    )
+  })
+
+program
+  .command('import <file>')
+  .description('загрузить вектора, посчитанные на другой машине')
+  .action(async (file: string) => {
+    const s = await importChunks(file)
+    console.log(
+      `Загружено новых: ${s.chunks}, уже было: ${s.skipped}, ${(s.ms / 1000).toFixed(1)} с\n` +
+        `Дальше: scs index <repo> — он соберёт локации и не пересчитает ни одного вектора.`,
+    )
+  })
+
+program
+  .command('doctor <repo>')
+  .description('здоровье индекса: сверка приближённой выдачи с точным перебором')
+  .option('--golden <path>', 'файл .jsonl с запросами', '')
+  .option('--unseal', 'открыть отложенный набор')
+  .action(async (name: string, opts: { golden: string; unseal?: boolean }) => {
+    const golden = loadGolden(opts.golden || `src/eval/golden.${name}.jsonl`, {
+      unseal: opts.unseal,
+    })
+    const health = await checkIndex(name, golden)
+    console.log(formatHealth(health))
+    // Молчаливый успех при найденных проблемах делает команду бесполезной
+    // в конвейере: её зовут именно затем, чтобы остановить выпуск.
+    if (indexProblems(health).length) process.exitCode = 1
+  })
+
+program
+  .command('accept <repo>')
+  .description('приёмочный прогон: замороженные пороги, отпечаток конфигурации, код возврата')
+  .requiredOption('--golden <path>', 'набор, по которому принимаем')
+  .option('--unseal', 'открыть отложенный набор — делается ОДИН раз')
+  .action(async (name: string, opts: { golden: string; unseal?: boolean }) => {
+    const golden = loadGolden(opts.golden, { unseal: opts.unseal })
+    const result = await runAcceptance(name, golden, opts.golden)
+    console.log(formatAcceptance(result, FROZEN_THRESHOLDS))
+    if (result.failures.length) process.exitCode = 1
   })
 
 program

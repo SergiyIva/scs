@@ -1,5 +1,7 @@
 import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
+import { stat } from 'node:fs/promises'
+import { join } from 'node:path'
 
 const exec = promisify(execFile)
 
@@ -84,6 +86,43 @@ async function listUntracked(root: string): Promise<GitFile[]> {
     const blobSha = shas[i]
     return blobSha ? [{ path, blobSha }] : []
   })
+}
+
+/**
+ * Blob sha по РАБОЧИМ файлам, а не по индексу git.
+ *
+ * Для watch-режима это принципиально: файл только что сохранён, в индексе git
+ * его новой версии нет, и `git ls-files -s` вернул бы прежний sha. Хэш считается
+ * тем же алгоритмом, что применит `git add`, поэтому последующее добавление
+ * в индекс не вызовет пересчёта векторов.
+ *
+ * Пути, которых нет на диске, в результат не попадают — по их отсутствию
+ * вызывающий код узнаёт об удалении.
+ */
+export async function hashWorkingFiles(
+  root: string,
+  paths: string[],
+): Promise<Map<string, string>> {
+  const out = new Map<string, string>()
+  if (!paths.length) return out
+
+  const existing: string[] = []
+  for (const p of paths) {
+    try {
+      await stat(join(root, p))
+      existing.push(p)
+    } catch {
+      // нет на диске — удалён
+    }
+  }
+  if (!existing.length) return out
+
+  const shas = (await hashObjects(root, existing)).split('\n').filter(Boolean)
+  existing.forEach((p, i) => {
+    const sha = shas[i]
+    if (sha) out.set(p, sha)
+  })
+  return out
 }
 
 export async function headCommit(root: string): Promise<string | null> {

@@ -25,6 +25,27 @@ export class Embedder {
     private readonly dims = loadConfig().embed.dims,
   ) {}
 
+  /**
+   * Полный ответ /health. Нужен приёмке: один и тот же идентификатор модели
+   * может обслуживаться разными бэкендами (Ollama или NPU), и отпечаток,
+   * не различающий их, подписывает не ту систему.
+   */
+  async health(): Promise<{ backend: string; model: string; dims: number } | null> {
+    try {
+      const res = await fetch(`${this.url}/health`, { signal: AbortSignal.timeout(3000) })
+      if (!res.ok) return null
+      const data: unknown = await res.json()
+      if (typeof data !== 'object' || data === null) return null
+      const { backend, model, dims } = data as Record<string, unknown>
+      if (typeof backend !== 'string' || typeof model !== 'string' || typeof dims !== 'number') {
+        return null
+      }
+      return { backend, model, dims }
+    } catch {
+      return null
+    }
+  }
+
   /** Идентификатор модели с сервиса — попадает в content_hash каждого чанка. */
   async model(): Promise<string> {
     if (this.modelId) return this.modelId

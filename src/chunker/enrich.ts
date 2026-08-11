@@ -13,6 +13,14 @@ export interface EnrichContext {
   kind: string
   /** Первая строка JSDoc. */
   doc: string | null
+  /** Первая строка модульного JSDoc: назначение файла (эксперимент A). */
+  moduleDoc?: string | null
+  /** JSDoc класса для его метода (эксперимент B). */
+  parentDoc?: string | null
+  /** Включать ли строку path-words (эксперимент D). */
+  withPathWords?: boolean
+  /** Имена вызывающих символов (эксперимент C). */
+  callers?: string[]
 }
 
 /**
@@ -67,8 +75,20 @@ export function buildHeader(
   if (ctx.doc) always.push(`// doc: ${ctx.doc}`)
 
   // От наиболее ценного к наименее — отбрасываем с конца.
+  //
+  // Назначение класса и модуля стоит первым: разбор промахов (RECALL85 §2)
+  // показал класс запросов, где связка «механизм → роль в сценарии» есть ТОЛЬКО
+  // в docstring класса или файла, а сам чанк описывает лишь как это сделано.
+  // Но обе строки ОДИНАКОВЫ для всех чанков файла, поэтому они в optional,
+  // а не в always: на коротком чанке заголовок не должен описывать файл вместо
+  // функции — этой ошибкой мы уже платили за пропорциональный заголовок (§15).
   const optional: string[] = []
-  optional.push(`// path-words: ${pathWords(ctx.path)}`)
+  // Вызывающие идут раньше всего остального опционального: назначение
+  // фрагмента часто известно не ему самому, а тому, кто его зовёт.
+  if (ctx.callers?.length) optional.push(`// callers: ${ctx.callers.join(', ')}`)
+  if (ctx.parentDoc) optional.push(`// class-doc: ${ctx.parentDoc}`)
+  if (ctx.moduleDoc && ctx.moduleDoc !== ctx.doc) optional.push(`// module: ${ctx.moduleDoc}`)
+  if (ctx.withPathWords !== false) optional.push(`// path-words: ${pathWords(ctx.path)}`)
   if (ctx.imports.length) optional.push(`// imports: ${list(ctx.imports)}`)
   if (ctx.exports.length) optional.push(`// exports: ${list(ctx.exports)}`)
 
