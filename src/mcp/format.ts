@@ -28,9 +28,20 @@ export function formatHits(hits: SearchHit[], tokenBudget: number): string {
   const parts: string[] = []
   let spent = 0
 
+  /**
+   * Число рядом с результатом — близость к запросу, а НЕ позиция в выдаче.
+   * Порядок задают слияние с лексикой и реранкер, поэтому 0.515 спокойно стоит
+   * шестым под тремя результатами с 0.33. Без подписи это читается как ошибка
+   * ранжирования: на живой работе так и прочли. Если порядок не совпадает
+   * с порядком близости — говорим об этом прямо, вместо того чтобы оставлять
+   * пользователя выяснять причину самому.
+   */
+  const sims = hits.map((h) => h.sim).filter((s): s is number => s !== null)
+  const reordered = sims.some((s, i) => i > 0 && s > sims[i - 1]! + 1e-9)
+
   for (const [i, h] of hits.entries()) {
     const scope = [...h.parentChain, h.symbol].filter(Boolean).join(' > ')
-    const relevance = h.sim === null ? h.score.toFixed(4) : h.sim.toFixed(3)
+    const relevance = h.sim === null ? 'без вектора' : `близость ${h.sim.toFixed(3)}`
     const header =
       `${i + 1}. ${h.path}:${h.startLine}-${h.endLine}` +
       `  ·  ${h.symbol ?? h.kind}  ·  ${relevance} (${h.via})`
@@ -48,6 +59,9 @@ export function formatHits(hits: SearchHit[], tokenBudget: number): string {
     spent += cost
   }
 
+  if (reordered) {
+    parts.push('Порядок задан ранжированием, а не близостью: сравнивать числа между собой не нужно.')
+  }
   parts.push('Полное тело фрагмента — expand_context. Точный поиск по имени символа — Grep.')
   return parts.join('\n')
 }
