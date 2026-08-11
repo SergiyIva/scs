@@ -13,9 +13,10 @@
  *   oracle — min-ранг по всем вариантам (потолок мульти-запроса)
  */
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
-import { db, toVectorLiteral, closeDb } from '../src/store/pool.js'
-import { Embedder } from '../src/embed/client.js'
-import { loadGolden } from '../src/eval/run.js'
+import './out-dir.js'
+import { db, toVectorLiteral, closeDb } from '../../src/store/pool.js'
+import { Embedder } from '../../src/embed/client.js'
+import { loadGolden } from '../../src/eval/run.js'
 
 const MODEL = process.env.QX_MODEL ?? 'gemma3:latest'
 const LIMIT = 1000
@@ -50,6 +51,7 @@ async function gen(q: string): Promise<{ keywords: string[]; code: string }> {
       options: { temperature: 0.3, num_predict: 500 },
     }),
   })
+  if (!res.ok) throw new Error(`генератор ответил ${res.status}: ${(await res.text()).slice(0, 200)}`)
   const data = (await res.json()) as { response: string }
   let parsed: { keywords?: unknown; code?: unknown }
   try {
@@ -61,8 +63,12 @@ async function gen(q: string): Promise<{ keywords: string[]; code: string }> {
     keywords: Array.isArray(parsed.keywords) ? parsed.keywords.map(String).slice(0, 16) : [],
     code: typeof parsed.code === 'string' ? parsed.code : '',
   }
-  cache[key] = out
-  writeFileSync(CACHE, JSON.stringify(cache, null, 1))
+  // Пустой результат не кэшируем: иначе единичный сбой генерации навсегда
+  // закрепляется в кэше и следующий прогон его не повторит.
+  if (out.keywords.length || out.code) {
+    cache[key] = out
+    writeFileSync(CACHE, JSON.stringify(cache, null, 1))
+  }
   return out
 }
 

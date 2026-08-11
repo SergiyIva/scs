@@ -6,9 +6,9 @@
  * чем пул одного запроса, и ближе к реальному корпусу.
  */
 import { readFileSync } from 'node:fs'
-import { db, closeDb } from '../src/store/pool.js'
-import { Embedder } from '../src/embed/client.js'
-import { loadGolden } from '../src/eval/run.js'
+import { db, closeDb } from '../../src/store/pool.js'
+import { Embedder } from '../../src/embed/client.js'
+import { loadGolden } from '../../src/eval/run.js'
 
 const DESC_MODEL = process.env.DESC_MODEL ?? 'gemma3:latest'
 const golden = loadGolden('src/eval/golden.unitify.jsonl')

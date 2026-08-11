@@ -7,13 +7,14 @@
  * прогоны и другие эксперименты читают кэш.
  */
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
-import { db, toVectorLiteral, closeDb } from '../src/store/pool.js'
-import { Embedder } from '../src/embed/client.js'
-import { Reranker } from '../src/rerank/client.js'
-import { loadGolden } from '../src/eval/run.js'
-import { loadConfig } from '../src/config.js'
-import { compilePriors } from '../src/store/priors.js'
-import type { SearchHit } from '../src/types.js'
+import './out-dir.js'
+import { db, toVectorLiteral, closeDb } from '../../src/store/pool.js'
+import { Embedder } from '../../src/embed/client.js'
+import { Reranker } from '../../src/rerank/client.js'
+import { loadGolden } from '../../src/eval/run.js'
+import { loadConfig } from '../../src/config.js'
+import { compilePriors } from '../../src/store/priors.js'
+import type { SearchHit } from '../../src/types.js'
 
 const DEPTH = 300
 const golden = loadGolden('src/eval/golden.unitify.jsonl')

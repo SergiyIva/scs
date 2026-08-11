@@ -12,9 +12,10 @@
  * сочетание считаются офлайн.
  */
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
-import { db, toVectorLiteral, closeDb } from '../src/store/pool.js'
-import { Embedder } from '../src/embed/client.js'
-import { loadGolden } from '../src/eval/run.js'
+import './out-dir.js'
+import { db, toVectorLiteral, closeDb } from '../../src/store/pool.js'
+import { Embedder } from '../../src/embed/client.js'
+import { loadGolden } from '../../src/eval/run.js'
 
 const MODEL = process.env.QX_MODEL ?? 'gemma3:latest'
 const LIMIT = 1000

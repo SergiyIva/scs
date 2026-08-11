@@ -4,10 +4,11 @@
  * пайплайне (priors + rerank RRF), плюс вид ожидаемого чанка.
  */
 import { writeFileSync } from 'node:fs'
-import { db, toVectorLiteral, closeDb } from '../src/store/pool.js'
-import { Embedder } from '../src/embed/client.js'
-import { search } from '../src/store/search.js'
-import { loadGolden } from '../src/eval/run.js'
+import './out-dir.js'
+import { db, toVectorLiteral, closeDb } from '../../src/store/pool.js'
+import { Embedder } from '../../src/embed/client.js'
+import { search } from '../../src/store/search.js'
+import { loadGolden } from '../../src/eval/run.js'
 
 const DEPTH = 3000
 const golden = loadGolden('src/eval/golden.unitify.jsonl')

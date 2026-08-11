@@ -60,7 +60,7 @@ function chunkCode(
 
   // 2. Всё, что не покрыто ни одним кандидатом: шапка файла, код между
   //    объявлениями, хвост после последнего.
-  for (const gap of uncoveredSpans(text, candidates)) {
+  for (const [i, gap] of uncoveredSpans(text, candidates).entries()) {
     // Не обрезаем: длинный промежуток разрежет splitToFit по контексту модели.
     // Обрезка здесь означала бы, что часть кода не попала в индекс и её нельзя
     // найти ничем, при этом никто об этом не узнает.
@@ -69,7 +69,10 @@ function chunkCode(
       startLine: lineOf(gap.start),
       endLine: lineOf(gap.end - 1),
       symbol: null,
-      kind: gap.start === 0 ? 'preamble' : 'binding',
+      // Первый непокрытый кусок — это шапка файла, даже если начинается
+      // не с нулевого смещения: обрезка ведущих пробелов сдвигает start,
+      // и сравнение с нулём молча переводило шапку в 'binding'.
+      kind: i === 0 && gap.isHead ? 'preamble' : 'binding',
       parentChain: [],
       exported: false,
       doc: null,
@@ -182,7 +185,7 @@ function splitOversized(
 function uncoveredSpans(
   text: string,
   candidates: Candidate[],
-): { text: string; start: number; end: number }[] {
+): { text: string; start: number; end: number; isHead: boolean }[] {
   const sorted = [...candidates].sort((a, b) => a.start - b.start)
   const spans: { start: number; end: number }[] = []
 
@@ -193,13 +196,18 @@ function uncoveredSpans(
   }
   if (cursor < text.length) spans.push({ start: cursor, end: text.length })
 
-  const out: { text: string; start: number; end: number }[] = []
+  const out: { text: string; start: number; end: number; isHead: boolean }[] = []
   for (const s of spans) {
     const raw = text.slice(s.start, s.end)
     const trimmed = raw.trim()
     if (!trimmed) continue
     const lead = raw.length - raw.trimStart().length
-    out.push({ text: trimmed, start: s.start + lead, end: s.start + lead + trimmed.length })
+    out.push({
+      text: trimmed,
+      start: s.start + lead,
+      end: s.start + lead + trimmed.length,
+      isHead: s.start === 0,
+    })
   }
   return out
 }

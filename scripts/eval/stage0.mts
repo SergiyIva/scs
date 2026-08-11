@@ -3,13 +3,13 @@
  * но кандидаты без истории git (@deleted). Ремонт HNSW уже сделан.
  * Ровно то, что даст флаг search.includeDeleted=false, без прочих изменений.
  */
-import { db, toVectorLiteral, closeDb } from '../src/store/pool.js'
-import { Embedder } from '../src/embed/client.js'
-import { Reranker } from '../src/rerank/client.js'
-import { loadGolden } from '../src/eval/run.js'
-import { loadConfig } from '../src/config.js'
-import { compilePriors } from '../src/store/priors.js'
-import type { SearchHit } from '../src/types.js'
+import { db, toVectorLiteral, closeDb } from '../../src/store/pool.js'
+import { Embedder } from '../../src/embed/client.js'
+import { Reranker } from '../../src/rerank/client.js'
+import { loadGolden } from '../../src/eval/run.js'
+import { loadConfig } from '../../src/config.js'
+import { compilePriors } from '../../src/store/priors.js'
+import type { SearchHit } from '../../src/types.js'
 
 const golden = loadGolden('src/eval/golden.unitify.jsonl')
 const cfg = loadConfig()

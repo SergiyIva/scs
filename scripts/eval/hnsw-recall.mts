@@ -2,9 +2,9 @@
  * HNSW против точного перебора на всех запросах golden-набора:
  * сколько кандидатов теряет индекс и теряет ли он ожидаемый ответ.
  */
-import { db, tx, toVectorLiteral, closeDb } from '../src/store/pool.js'
-import { Embedder } from '../src/embed/client.js'
-import { loadGolden } from '../src/eval/run.js'
+import { db, tx, toVectorLiteral, closeDb } from '../../src/store/pool.js'
+import { Embedder } from '../../src/embed/client.js'
+import { loadGolden } from '../../src/eval/run.js'
 
 const golden = loadGolden('src/eval/golden.unitify.jsonl')
 const embedder = new Embedder()
@@ -52,7 +52,7 @@ for (const entry of golden) {
   })
 
   const exactIds = new Set(exact.rows.map((r) => r.id))
-  const overlap = hnsw.rows.filter((r) => exactIds.has(r.id)).length / K
+  const overlap = hnsw.rows.filter((r) => exactIds.has(r.id)).length / Math.max(1, exact.rows.length)
   overlapSum += overlap
   if (exact.rows.some(match)) expExactIn50++
   if (hnsw.rows.some(match)) expHnswIn50++

@@ -1,9 +1,17 @@
 import { readFileSync } from 'node:fs'
-import { loadGolden } from '../src/eval/run.js'
+import { loadGolden } from '../../src/eval/run.js'
 const BR = ['base','kw','hydeQ','hydeD','lex'] as const
 type B = (typeof BR)[number]
 interface PQ { hit: Record<B, number|null> }
 const data: PQ[] = JSON.parse(readFileSync('scratch/out/qx-lists-v2.json','utf8'))
+if (data.length !== golden.length) {
+  // Кэш и набор сопоставляются по индексу, поэтому расхождение длин означает
+  // молча перепутанные запросы, а не мелкое неудобство.
+  throw new Error(
+    `кэш списков не соответствует набору: data ${data.length} против golden ${golden.length}. ` +
+      'Удалите scratch/out/qx-lists-v2.json и пересоберите.',
+  )
+}
 const golden = loadGolden('src/eval/golden.unitify.jsonl')
 
 const core: B[] = ['base','kw','hydeQ']

@@ -1,6 +1,6 @@
 /** Мёртвые запросы (ответ вне топ-1000 при любом варианте с gemma3:4b): спасает ли генератор покрупнее. */
-import { db, toVectorLiteral, closeDb } from '../src/store/pool.js'
-import { Embedder } from '../src/embed/client.js'
+import { db, toVectorLiteral, closeDb } from '../../src/store/pool.js'
+import { Embedder } from '../../src/embed/client.js'
 
 const MODEL = process.env.QX_MODEL ?? 'qwen3-vl:8b'
 const QUERIES: { q: string; expect: string[] }[] = [

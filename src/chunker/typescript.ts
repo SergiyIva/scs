@@ -60,7 +60,7 @@ export function moduleDocRange(text: string): { pos: number; end: number } | nul
   const tail = text.slice(jsdoc.end)
   const tagged = /@(module|file|fileoverview)\b/.test(text.slice(jsdoc.pos, jsdoc.end))
   const blankLineAfter = /^[^\S\n]*\n[^\S\n]*\n/.test(tail)
-  const importsNext = /^\s*(import\b|const\s.*=\s*require\()/.test(tail)
+  const importsNext = /^\s*(import\b|(const|let|var)\s[\s\S]*?=\s*require\(|require\()/.test(tail)
   return tagged || blankLineAfter || importsNext ? { pos: jsdoc.pos, end: jsdoc.end } : null
 }
 
@@ -175,6 +175,11 @@ export function parseFile(
   // Имена, экспортированные по-CommonJS. Собираются вторым проходом, потому что
   // module.exports обычно стоит в конце файла, а пометить надо объявления выше.
   const commonJsExports = new Set<string>()
+  // Локальные имена из псевдонимов: `module.exports = { publicName: localName }`.
+  // Публичным экспортом является publicName, а пометить экспортируемым надо
+  // объявление localName — смешивать их в одном множестве значит либо потерять
+  // пометку, либо объявить несуществующий экспорт.
+  const commonJsLocals = new Set<string>()
 
   const moduleEnd = moduleDocRange(text)?.end ?? -1
 
@@ -329,11 +334,18 @@ export function parseFile(
 
       if (isNamedExport) {
         commonJsExports.add(left.name.text)
+        // `exports.publicName = localName`
+        if (ts.isIdentifier(right)) commonJsLocals.add(right.text)
       } else if (isModuleExports) {
         if (ts.isObjectLiteralExpression(right)) {
           for (const prop of right.properties) {
             const name = prop.name && ts.isIdentifier(prop.name) ? prop.name.text : null
-            if (name) commonJsExports.add(name)
+            if (!name) continue
+            commonJsExports.add(name)
+            // `{ publicName: localName }` — помечать надо объявление localName.
+            if (ts.isPropertyAssignment(prop) && ts.isIdentifier(prop.initializer)) {
+              commonJsLocals.add(prop.initializer.text)
+            }
           }
         } else if (ts.isIdentifier(right)) {
           commonJsExports.add(right.text)
@@ -343,7 +355,9 @@ export function parseFile(
   }
 
   for (const c of candidates) {
-    if (c.symbol && commonJsExports.has(c.symbol)) c.exported = true
+    if (c.symbol && (commonJsExports.has(c.symbol) || commonJsLocals.has(c.symbol))) {
+      c.exported = true
+    }
   }
   exports.push(...commonJsExports)
 

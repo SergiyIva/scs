@@ -3,17 +3,22 @@
 # Оба свипа мерились только на 170 чанках (§9 DESIGN), то есть не мерились.
 # Реранкер выключен намеренно: свип должен показывать вклад ИНДЕКСА,
 # а не работу второй ступени, и без него прогон вчетверо быстрее.
-set -u
+# -e и -o pipefail: без них падение индексации молча продолжало свип
+# и записывало в таблицу числа от ПРЕДЫДУЩЕЙ конфигурации.
+set -euo pipefail
 REPO=${REPO:-unitify}
-OUT=/tmp/scs-sweep/results.txt
+REPO_PATH=${REPO_PATH:?укажите REPO_PATH — путь к репозиторию, который индексируем}
+OUTDIR=/tmp/scs-sweep
+mkdir -p "$OUTDIR"
+OUT="$OUTDIR/results.txt"
 : > "$OUT"
 
 run () {
   local name="$1" json="$2"
-  local cfg=/tmp/scs-sweep/cfg.json
+  local cfg="$OUTDIR/cfg.json"
   cat > "$cfg" <<EOF
 {
-  "repos": [{ "name": "unitify", "path": "/home/sergey/WebstormProjects/unitify", "watch": false }],
+  "repos": [{ "name": "$REPO", "path": "$REPO_PATH", "watch": false }],
   "pg": "postgres://scs:scs@127.0.0.1:5434/scs",
   "search": { "rerank": { "enabled": false } },
   "chunk": $json

@@ -14,9 +14,10 @@
  * Все выводы кэшируются: повторный прогон бесплатен.
  */
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
+import './out-dir.js'
 import { createHash } from 'node:crypto'
-import { db, closeDb } from '../src/store/pool.js'
-import { loadGolden } from '../src/eval/run.js'
+import { db, closeDb } from '../../src/store/pool.js'
+import { loadGolden } from '../../src/eval/run.js'
 
 const RR_MODEL = process.env.RR_MODEL ?? 'qwen3-vl:8b'
 const DEPTH = 55
@@ -28,6 +29,14 @@ type B = (typeof BR)[number]
 const golden = loadGolden('src/eval/golden.unitify.jsonl')
 const lists: { lists: Record<string, string[]>; hit: Record<string, number | null>; matches: string[] }[] =
   JSON.parse(readFileSync('scratch/out/qx-lists-v2.json', 'utf8'))
+if (lists.length !== golden.length) {
+  // Кэш и набор сопоставляются по индексу, поэтому расхождение длин означает
+  // молча перепутанные запросы, а не мелкое неудобство.
+  throw new Error(
+    `кэш списков не соответствует набору: lists ${lists.length} против golden ${golden.length}. ` +
+      'Удалите scratch/out/qx-lists-v2.json и пересоберите.',
+  )
+}
 
 const CACHE = 'scratch/out/stage2b-cache.json'
 const cache: Record<string, number[]> = existsSync(CACHE) ? JSON.parse(readFileSync(CACHE, 'utf8')) : {}

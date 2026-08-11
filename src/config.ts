@@ -81,7 +81,9 @@ const ConfigSchema = z.object({
       // hnsw.ef_search для векторной ветки. Умолчание pgvector — 40, и на
       // корпусе в 40k чанков оно даёт лишь 69% совпадения с точным перебором.
       // 200 даёт 97% за 5 мс, 600 — 100% за 80 мс. Замер в docs/DESIGN.md §17.
-      efSearch: z.number().int().positive().default(200),
+      // Верхняя граница не косметика: pgvector принимает ef_search до 1000,
+      // и опечатка в конфиге иначе обернулась бы отказом уже в SET LOCAL.
+      efSearch: z.number().int().positive().max(1000).default(200),
       rrfK: z.number().int().positive().default(60),
       maxPerFile: z.number().int().positive().default(2),
       tokenBudget: z.number().int().positive().default(4000),

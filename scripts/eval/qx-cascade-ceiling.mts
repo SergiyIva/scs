@@ -15,7 +15,7 @@ const fused = (q: PQ, d: number, k = 60) => {
 
 console.log('Ответы, утонувшие в слиянии (ранг > 30) — их место ВНУТРИ ветвей:\n')
 console.log('  ранг слияния   base    kw  hydeQ   спасает поветвевой отбор top-N?')
-let savedBy10 = 0, savedBy8 = 0, lost = 0
+let savedBy8 = 0, savedBy10 = 0, savedBy20 = 0, lost = 0, deep = 0
 for (const q of data) {
   const want = new Set(q.matches)
   const f = fused(q, D)
@@ -24,10 +24,17 @@ for (const q of data) {
   if (!avail || (fr > 0 && fr <= 30)) continue
   const best = Math.min(...core.map(b => q.hit[b] ?? 1e9))
   const mark = best <= 8 ? 'да (top-8)' : best <= 10 ? 'да (top-10)' : best <= 20 ? 'только top-20' : 'нет'
-  if (best <= 8) savedBy8++; else if (best <= 10) savedBy10++; else lost++
+  deep++
+  if (best <= 8) savedBy8++
+  else if (best <= 10) savedBy10++
+  else if (best <= 20) savedBy20++
+  else lost++
   console.log(`  ${String(fr||'—').padStart(11)}  ${String(q.hit.base ?? '—').padStart(5)} ${String(q.hit.kw ?? '—').padStart(5)} ${String(q.hit.hydeQ ?? '—').padStart(6)}   ${mark}`)
 }
-console.log(`\nиз 13: спасаются квотой top-8 — ${savedBy8}, только top-10 — ${savedBy10}, не спасаются — ${lost}`)
+console.log(
+  `\nиз ${deep}: спасаются квотой top-8 — ${savedBy8}, только top-10 — ${savedBy10}, ` +
+    `только top-20 — ${savedBy20}, не спасаются — ${lost}`,
+)
 
 // Потолок каскада: сколько ответов доживает до финального окна при разных квотах
 for (const quota of [5, 8, 10, 15]) {
@@ -39,5 +46,5 @@ for (const quota of [5, 8, 10, 15]) {
     size += picked.size
     if ([...picked].some(id => want.has(id))) reach++
   }
-  console.log(`квота ${String(quota).padStart(2)} на ветвь → доступно ${reach}/58, финальное окно в среднем ${Math.round(size/data.length)} карточек`)
+  console.log(`квота ${String(quota).padStart(2)} на ветвь → доступно ${reach}/${data.length}, финальное окно в среднем ${Math.round(size/data.length)} карточек`)
 }

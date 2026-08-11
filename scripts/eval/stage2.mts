@@ -10,14 +10,15 @@
  * Все LLM-выводы кэшируются: scratch/out/rr-cache.json.
  */
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
+import './out-dir.js'
 import { createHash } from 'node:crypto'
-import { db, toVectorLiteral, closeDb } from '../src/store/pool.js'
-import { Embedder } from '../src/embed/client.js'
-import { Reranker } from '../src/rerank/client.js'
-import { loadGolden } from '../src/eval/run.js'
-import { loadConfig } from '../src/config.js'
-import { compilePriors } from '../src/store/priors.js'
-import type { SearchHit } from '../src/types.js'
+import { db, toVectorLiteral, closeDb } from '../../src/store/pool.js'
+import { Embedder } from '../../src/embed/client.js'
+import { Reranker } from '../../src/rerank/client.js'
+import { loadGolden } from '../../src/eval/run.js'
+import { loadConfig } from '../../src/config.js'
+import { compilePriors } from '../../src/store/priors.js'
+import type { SearchHit } from '../../src/types.js'
 
 const QX_MODEL = process.env.QX_MODEL ?? 'gemma3:latest'
 const RR_MODEL = process.env.RR_MODEL ?? 'qwen3-vl:8b'

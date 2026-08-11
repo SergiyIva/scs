@@ -10,9 +10,10 @@
  * он может достать кандидата из глубины, но не может выкинуть верхний.
  */
 import { readFileSync, writeFileSync, existsSync } from 'node:fs'
+import './out-dir.js'
 import { createHash } from 'node:crypto'
-import { db, closeDb } from '../src/store/pool.js'
-import { loadGolden } from '../src/eval/run.js'
+import { db, closeDb } from '../../src/store/pool.js'
+import { loadGolden } from '../../src/eval/run.js'
 
 const RR_MODEL = process.env.RR_MODEL ?? 'qwen3-vl:8b'
 const DEPTH = 55, BATCH = 30, PER_BATCH = 8
@@ -80,7 +81,9 @@ for (const [qi, entry] of golden.entries()) {
   // Голова проходит без фильтра; судья работает только на повышение из глубины.
   const finalists: Row[] = [...pool.slice(0, HEAD_KEEP)]
   const seen = new Set(finalists.map((r) => r.id))
-  for (let s = BATCH; s < pool.length; s += BATCH) {
+  // Начинаем с HEAD_KEEP, а не с BATCH: голова берёт первые HEAD_KEEP,
+  // и при старте с BATCH кандидаты между ними вообще не попадали к судье.
+  for (let s = HEAD_KEEP; s < pool.length; s += BATCH) {
     const batch = pool.slice(s, s + BATCH)
     for (const idx of (await judge(entry.q, batch, PER_BATCH, true)).slice(0, PER_BATCH)) {
       const r = batch[idx]!

@@ -1,6 +1,6 @@
 /** Точный перебор vs HNSW-ветка search() для одного запроса: кого теряет индекс. */
-import { db, tx, toVectorLiteral, closeDb } from '../src/store/pool.js'
-import { Embedder } from '../src/embed/client.js'
+import { db, tx, toVectorLiteral, closeDb } from '../../src/store/pool.js'
+import { Embedder } from '../../src/embed/client.js'
 
 const q = process.argv[2] ?? 'как проверяется, что адрес для подтверждения продавца, присланный с устройства, действительно принадлежит Apple'
 const embedder = new Embedder()
