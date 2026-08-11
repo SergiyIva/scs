@@ -8,4 +8,13 @@ export interface ChunkBudget {
   targetTokens: number
   maxTokens: number
   headerBudget: number
+  /** Строка `module:` в заголовке — назначение файла (эксперимент A). */
+  moduleDocInHeader?: boolean
+  /** Строка `class-doc:` в заголовке — назначение класса (эксперимент B). */
+  classDocInHeader?: boolean
+  /** Строки заголовка, общие для всех чанков файла (эксперимент D). */
+  pathWordsInHeader?: boolean
+  importsInHeader?: boolean
+  exportsInHeader?: boolean
+  callersInHeader?: boolean
 }

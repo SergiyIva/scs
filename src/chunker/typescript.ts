@@ -18,6 +18,8 @@ export interface Candidate {
   parentChain: string[]
   exported: boolean
   doc: string | null
+  /** JSDoc родителя (класса) для его методов: сам метод часто описан скупо. */
+  parentDoc?: string | null
   /** Смещение начала с учётом ведущего JSDoc. */
   start: number
   end: number
@@ -28,6 +30,58 @@ export interface ParsedFile {
   exports: string[]
   candidates: Candidate[]
   sourceFile: ts.SourceFile
+  /** Первая строка модульного JSDoc: назначение файла человеческими словами. */
+  moduleDoc: string | null
+}
+
+/**
+ * Настоящий модульный JSDoc — то есть блок, описывающий ФАЙЛ, а не первое
+ * объявление в нём.
+ *
+ * Разница принципиальна, и первая версия этой функции её не делала: она брала
+ * первый `/** ... *\/` в первых 3000 символах, поэтому у файла без модульного
+ * комментария в заголовок ВСЕХ чанков уезжал JSDoc первой функции. Замер
+ * с такой реализацией мерил не то, что заявлено, и вывод «окупился модульный
+ * JSDoc» был сильнее данных.
+ *
+ * Блок считается модульным, если он стоит до первого объявления и выполнено
+ * хотя бы одно условие:
+ *   - в нём есть @module / @file / @fileoverview — явное заявление намерения;
+ *   - между ним и следующим кодом пустая строка (конвенция JSDoc: блок,
+ *     отделённый пустой строкой, не привязан к следующему объявлению);
+ *   - следующая за ним конструкция — import или require, то есть привязываться
+ *     ему всё равно не к чему.
+ */
+export function moduleDocRange(text: string): { pos: number; end: number } | null {
+  const ranges = ts.getLeadingCommentRanges(text, 0) ?? []
+  const jsdoc = ranges.find((r) => text.slice(r.pos, r.pos + 3) === '/**')
+  if (!jsdoc) return null
+
+  const tail = text.slice(jsdoc.end)
+  const tagged = /@(module|file|fileoverview)\b/.test(text.slice(jsdoc.pos, jsdoc.end))
+  const blankLineAfter = /^[^\S\n]*\n[^\S\n]*\n/.test(tail)
+  const importsNext = /^\s*(import\b|const\s.*=\s*require\()/.test(tail)
+  return tagged || blankLineAfter || importsNext ? { pos: jsdoc.pos, end: jsdoc.end } : null
+}
+
+export function moduleDocOf(text: string): string | null {
+  const jsdoc = moduleDocRange(text)
+  if (!jsdoc) return null
+
+  const lines = text
+    .slice(jsdoc.pos, jsdoc.end)
+    .split('\n')
+    .map((l) => l.replace(/^\s*\/?\*+/, '').replace(/\*\/\s*$/, '').trim())
+    .filter((l) => l.length > 0)
+
+  // У `@fileoverview Роутер платежей.` содержательная часть стоит ПОСЛЕ тега:
+  // отбросив строку целиком, мы потеряли бы ровно то, ради чего пришли.
+  for (const l of lines) {
+    const tagged = /^@(module|file|fileoverview)\s+(.+)$/.exec(l)
+    if (tagged) return tagged[2]!.slice(0, 200)
+    if (!l.startsWith('@')) return l.slice(0, 200)
+  }
+  return null
 }
 
 export function scriptKindFor(path: string): ts.ScriptKind {
@@ -55,10 +109,20 @@ export function langFor(path: string): string {
 }
 
 /** Первая содержательная строка JSDoc — самый дешёвый источник человеческой семантики. */
-function extractDoc(node: ts.Node, text: string): { doc: string | null; start: number } {
+function extractDoc(
+  node: ts.Node,
+  text: string,
+  moduleEnd = -1,
+): { doc: string | null; start: number } {
   const nodeStart = node.getStart(node.getSourceFile(), false)
   const ranges = ts.getLeadingCommentRanges(text, node.getFullStart()) ?? []
-  const jsdoc = [...ranges].reverse().find((r) => text.slice(r.pos, r.pos + 3) === '/**')
+  // Блок, уже признанный модульным, физически является ведущим комментарием
+  // ПЕРВОГО объявления. Отдать его ещё и объявлению — значит выдать описание
+  // файла за описание функции; ровно эту подмену мы только что чинили
+  // в обратную сторону.
+  const jsdoc = [...ranges]
+    .reverse()
+    .find((r) => text.slice(r.pos, r.pos + 3) === '/**' && r.end > moduleEnd)
   if (!jsdoc) return { doc: null, start: nodeStart }
 
   const body = text.slice(jsdoc.pos, jsdoc.end)
@@ -112,14 +176,23 @@ export function parseFile(
   // module.exports обычно стоит в конце файла, а пометить надо объявления выше.
   const commonJsExports = new Set<string>()
 
-  const push = (node: ts.Node, symbol: string | null, chunkKind: ChunkKind, parents: string[]) => {
-    const { doc, start } = extractDoc(node, text)
+  const moduleEnd = moduleDocRange(text)?.end ?? -1
+
+  const push = (
+    node: ts.Node,
+    symbol: string | null,
+    chunkKind: ChunkKind,
+    parents: string[],
+    parentDoc: string | null = null,
+  ) => {
+    const { doc, start } = extractDoc(node, text, moduleEnd)
     candidates.push({
       symbol,
       kind: chunkKind,
       parentChain: parents,
       exported: isExported(node),
       doc,
+      parentDoc,
       start,
       end: node.getEnd(),
     })
@@ -159,6 +232,9 @@ export function parseFile(
       if (approxTokens(stmt) <= maxTokensPerNode) {
         push(stmt, symbol, 'class', [])
       } else {
+        // Класс режется по методам: сам метод обычно описан скупо, а назначение
+        // целого живёт в JSDoc класса — передаём его каждому методу.
+        const classDoc = extractDoc(stmt, text, moduleEnd).doc
         for (const member of stmt.members) {
           if (
             ts.isMethodDeclaration(member) ||
@@ -167,7 +243,7 @@ export function parseFile(
             ts.isSetAccessorDeclaration(member)
           ) {
             const mName = ts.isConstructorDeclaration(member) ? 'constructor' : nameOf(member)
-            push(member, mName, 'method', symbol ? [symbol] : [])
+            push(member, mName, 'method', symbol ? [symbol] : [], classDoc)
           }
         }
       }
@@ -220,7 +296,7 @@ export function parseFile(
               ? 'component'
               : 'function'
         // Берём весь VariableStatement, чтобы в чанк попали export и const.
-        const { doc, start } = extractDoc(stmt, text)
+        const { doc, start } = extractDoc(stmt, text, moduleEnd)
         candidates.push({
           symbol,
           kind: chunkKind,
@@ -272,7 +348,13 @@ export function parseFile(
   exports.push(...commonJsExports)
 
   candidates.sort((a, b) => a.start - b.start)
-  return { imports: dedupe(imports), exports: dedupe(exports), candidates, sourceFile }
+  return {
+    imports: dedupe(imports),
+    exports: dedupe(exports),
+    candidates,
+    sourceFile,
+    moduleDoc: moduleDocOf(text),
+  }
 }
 
 function dedupe(xs: string[]): string[] {

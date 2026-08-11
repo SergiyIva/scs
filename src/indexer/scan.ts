@@ -9,6 +9,7 @@ import { makeFilter, looksIndexable } from './deny.js'
 import { upsertRepo, markIndexed } from '../store/repos.js'
 import { commitFile, deleteFile, knownFiles, missingHashes, prepare } from '../store/chunks.js'
 import { DELETED_PREFIX } from './history.js'
+import { buildCallMap, type CallMap } from './callgraph.js'
 
 export interface IndexReport {
   scanned: number
@@ -66,6 +67,13 @@ export async function indexRepo(repo: RepoConfig, opts: IndexOptions = {}): Prom
   const removed = [...known.keys()].filter((p) => !present.has(p) && !p.startsWith(DELETED_PREFIX))
   for (const path of removed) await deleteFile(row.id, path)
 
+  // Карта вызовов строится один раз на весь проход: она репозиторная,
+  // а не файловая. В watch-режиме она не перестраивается — там правка одного
+  // файла не должна тянуть разбор семи тысяч (см. indexPaths).
+  const callers = cfg.chunk.callersInHeader
+    ? await buildCallMap(repo.path, tracked.map((f) => f.path))
+    : undefined
+
   const changed = tracked.filter((f) => known.get(f.path) !== f.blobSha)
 
   const report = emptyReport()
@@ -77,7 +85,7 @@ export async function indexRepo(repo: RepoConfig, opts: IndexOptions = {}): Prom
   for (const f of changed) {
     done++
     opts.onProgress?.(done, changed.length, f.path)
-    await processFile(repo, row.id, f.path, f.blobSha, modelId, embedder, report)
+    await processFile(repo, row.id, f.path, f.blobSha, modelId, embedder, report, callers)
   }
 
   await markIndexed(row.id, await headCommit(repo.path))
@@ -148,6 +156,7 @@ async function processFile(
   modelId: string,
   embedder: Embedder,
   report: IndexReport,
+  callers?: CallMap,
 ): Promise<void> {
   const cfg = loadConfig()
   const abs = join(repo.path, path)
@@ -172,7 +181,7 @@ async function processFile(
     return
   }
 
-  const file = chunkFile(repo.name, path, text, blobSha, cfg.chunk)
+  const file = chunkFile(repo.name, path, text, blobSha, cfg.chunk, callers)
   if (!file.chunks.length) {
     report.skipped++
     return

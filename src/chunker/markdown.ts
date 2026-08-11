@@ -101,7 +101,7 @@ export function chunkMarkdown(
     lang: langFor(path),
     blobSha,
     chunks: assemble(
-      { repo, path, exports: headings, imports: links },
+      { repo, path, exports: headings, imports: links, moduleDoc: front.description ?? docTitle },
       card ? [card, ...merged] : merged,
       budget,
     ),

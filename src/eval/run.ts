@@ -27,7 +27,23 @@ export interface ModeResult {
   misses: { q: string; expect: string[]; got: string[] }[]
 }
 
-export function loadGolden(path: string): GoldenEntry[] {
+/**
+ * Отложенный набор запечатан на уровне загрузки, а не отдельной команды.
+ *
+ * Первая версия проверяла печать только в `scs eval`, и `scs depth --golden
+ * ...holdout...` её обходил. Защита, которую можно обойти соседней командой,
+ * защитой не является: набор открывается один раз, после заморозки, и любой
+ * прогон «просто посмотреть» превращает его в настроечный.
+ */
+export function loadGolden(path: string, opts: { unseal?: boolean } = {}): GoldenEntry[] {
+  if (/holdout/i.test(path) && !opts.unseal) {
+    throw new Error(
+      `${path} — отложенный набор, он запечатан.\n` +
+        `Открывается один раз, после заморозки чанк-схемы и параметров, ` +
+        `и с заранее объявленным порогом качества (docs/RECALL85.md §4.2).\n` +
+        `Если это тот самый раз — добавьте --unseal.`,
+    )
+  }
   return readFileSync(path, 'utf8')
     .split('\n')
     .filter((l) => l.trim() && !l.trimStart().startsWith('//'))
@@ -151,10 +167,13 @@ export function formatResults(results: ModeResult[], total: number): string {
     }
   }
 
-  const target = 0.85
-  if (hybrid && hybrid.recallAt5 < target) {
+  // 85% — исследовательский ориентир, а НЕ порог выпуска: измеренного пути к нему
+  // в архитектуре чистого retrieval нет (docs/RECALL85.md §4.2). Порог качества
+  // задаётся отдельно и заранее, до открытия отложенного набора.
+  const REFERENCE = 0.85
+  if (hybrid && hybrid.recallAt5 < REFERENCE) {
     out.push(
-      `\nRecall@5 = ${pct(hybrid.recallAt5)} при целевых ${pct(target)}. ` +
+      `\nRecall@5 = ${pct(hybrid.recallAt5)} при ориентире ${pct(REFERENCE)}. ` +
         `Смотрите промахи выше, а не общий процент.`,
     )
   }

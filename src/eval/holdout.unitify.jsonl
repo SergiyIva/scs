@@ -1,0 +1,100 @@
+{"q": "где выносится вердикт, пускать ли внешний телефонный шлюз к данным организации и с каким кодом отказа", "expect": ["apps/condo/domains/ai-agent/server/voice/authorization.ts::decideVoiceAuthorization"]}
+{"q": "что не даёт серверу обрабатывать слишком много реплик разговора одновременно и занимает место в этом ограничении", "expect": ["apps/condo/domains/ai-agent/server/voice/turnConcurrency.ts::acquireVoiceTurnSlot"]}
+{"q": "где после окончания разговора с роботом с организации списываются израсходованные средства", "expect": ["apps/condo/domains/ai-agent/server/voice/settleCall.ts::settleVoiceCallConsumption"]}
+{"q": "где готовится канал для постепенной выдачи ответа кусками, пока он ещё генерируется", "expect": ["apps/condo/domains/ai-agent/server/voice/sse.ts::openVoiceSseStream"]}
+{"q": "как проверяется предъявленный пароль внешнего шлюза, если он хранится только в виде свёртки", "expect": ["apps/condo/domains/ai-agent/server/voice/credential.ts::connectionCredentialMatches"]}
+{"q": "как понять, что реплика в переписке пришла со звонка, а не была набрана руками", "expect": ["apps/condo/domains/ai-agent/server/voice/isVoiceMessage.ts::isVoiceMessage"]}
+{"q": "где файл ужимается без ухудшения содержимого перед сохранением", "expect": ["apps/condo/domains/ai-agent/server/rag/compressPdf.js::compressPdfLossless"]}
+{"q": "как по типу содержимого и расширению имени понять, чем именно разбирать загруженный файл", "expect": ["apps/condo/domains/ai-agent/server/rag/extract.js::_resolveFormat"]}
+{"q": "где сначала подбирается краткое описание бумаги, а уже потом подробные фрагменты внутри неё", "expect": ["apps/condo/domains/ai-agent/server/rag/search.js::searchDocumentChunksHierarchical"]}
+{"q": "где перед обращением к нейросети проверяется, хватает ли у организации оплаченных средств", "expect": ["apps/condo/domains/ai-agent/server/guards/budget.ts::checkBudget"]}
+{"q": "что возвращает заранее отложенную сумму обратно, если обращение к нейросети не состоялось", "expect": ["apps/condo/domains/ai-agent/server/guards/budget.ts::releaseReservation"]}
+{"q": "где по числу израсходованных единиц текста считается стоимость во внутренних баллах организации", "expect": ["apps/condo/domains/ai-agent/server/llm/pricing.ts::computeCreditsConsumed"]}
+{"q": "где название нейросети приводится к единому виду, чтобы найти её в таблице цен", "expect": ["apps/condo/domains/ai-agent/server/llm/pricing.ts::normalizeModelId"]}
+{"q": "как переписка жильца с ботом передаётся живому оператору поддержки", "expect": ["apps/condo/domains/ai-agent/server/chat/escalateResidentChatToHuman.ts::escalateResidentChatToHuman"]}
+{"q": "что происходит, если сообщение в мессенджере не дошло — где заводится дубль обычным текстом на телефон", "expect": ["apps/condo/domains/notification/utils/serverSchema/whatsAppToSmsFallback.ts::ensureWhatsAppToSmsFallback"]}
+{"q": "где номер абонента частично скрывается перед записью в журнал событий", "expect": ["apps/condo/domains/notification/adapters/smsAdapter.ts::redactPhone"]}
+{"q": "как из служебных данных вычищаются одноразовые коды и пароли перед логированием", "expect": ["apps/condo/domains/notification/adapters/smsAdapter.ts::redactMeta"]}
+{"q": "где реализована доставка уведомлений на телефоны Huawei", "expect": ["apps/condo/domains/notification/adapters/hcmAdapter.js::HCMAdapter"]}
+{"q": "откуда берётся перечень заданий, которые стоят в ожидании и ещё не начали выполняться", "expect": ["apps/condo/domains/common/utils/cronMonitor.ts::readWaitingJobs"]}
+{"q": "где отвязывается устройство, если служба доставки ответила, что его ключ больше не годится", "expect": ["apps/condo/domains/notification/transports/push.js::deleteRemoteClientsIfTokenIsInvalid"]}
+{"q": "где входящий обратный вызов от поставщика рассылок отсеивается по сетевому адресу отправителя", "expect": ["apps/condo/domains/notification/MessaggioWebhookMiddleware.js::isAllowedIp"]}
+{"q": "где выявляется, что работник тратит на обращение заметно больше запланированного времени", "expect": ["apps/condo/domains/ticket/tasks/detectScheduleDeviations.js::detectDeviations"]}
+{"q": "откуда берётся перечень сотрудников, которым можно передать затянувшуюся работу", "expect": ["apps/condo/domains/ticket/tasks/detectScheduleDeviations.js::_getReassignCandidates"]}
+{"q": "где убираются пункты плана работ по обращениям, которые уже закрыты или отменены", "expect": ["apps/condo/domains/ticket/tasks/reconcileScheduleItems.js::reconcileScheduleItems"]}
+{"q": "когда авария устранена, где разом переводятся в выполненные все связанные с ней обращения жильцов", "expect": ["apps/condo/domains/ticket/tasks/cascadeCompleteIncidentTickets.ts::_cascadeCompleteIncidentTickets"]}
+{"q": "где по прежнему и новому состоянию обращения определяется, что именно поменялось — назначили ответственного или сменили стадию", "expect": ["apps/condo/domains/ticket/utils/detectTicketEventTypes.ts::detectTicketEventTypes"]}
+{"q": "где составляется список, кому и какое извещение уйдёт после правки обращения", "expect": ["apps/condo/domains/ticket/utils/ticketNotificationRecipients.ts::resolveTicketNotificationPlan"]}
+{"q": "как по новой стадии обращения подбирается подходящий вид извещения", "expect": ["apps/condo/domains/ticket/utils/ticketNotificationRecipients.ts::resolveStatusMessageType"]}
+{"q": "где ставится отметка, что работу закончили позже обещанного жильцу срока", "expect": ["apps/condo/domains/ticket/utils/serverSchema/resolveHelpers.js::calculateIsCompletedAfterDeadline"]}
+{"q": "где растёт число повторных открытий обращения после его закрытия", "expect": ["apps/condo/domains/ticket/utils/serverSchema/resolveHelpers.js::calculateReopenedCounter"]}
+{"q": "где по телефону и имени звонящего заводится карточка жителя, если такой ещё нет", "expect": ["apps/condo/domains/ticket/utils/serverSchema/resolveHelpers.js::getOrCreateContactByClientData"]}
+{"q": "откуда подставляются подъезд и этаж, если в обращении указана только квартира", "expect": ["apps/condo/domains/ticket/utils/serverSchema/resolveHelpers.js::setSectionAndFloorFieldsByDataFromPropertyMap"]}
+{"q": "где обращение автоматически относят к нужному разделу по его описанию", "expect": ["apps/condo/domains/ticket/utils/serverSchema/resolveHelpers.js::classifyTicket"]}
+{"q": "как исполнитель забирает заказ себе так, чтобы двое не схватили один и тот же", "expect": ["apps/condo/domains/ticket/schema/TakeMarketplaceTicketService.ts::TakeMarketplaceTicketService"]}
+{"q": "где по наступлении назначенной даты приостановленные обращения снова становятся активными", "expect": ["apps/condo/domains/ticket/tasks/reopenDeferredTickets.js::reopenDeferredTickets"]}
+{"q": "где сделанные обращения спустя время сами переводятся в окончательное состояние", "expect": ["apps/condo/domains/ticket/tasks/closeCompletedTickets.js::closeCompletedTickets"]}
+{"q": "где в схеме дома ищутся повторяющиеся номера квартир", "expect": ["apps/condo/domains/property/utils/serverSchema/helpers.ts::findDuplicateUnitLabels"]}
+{"q": "как получить сплошной перечень всех квартир дома из его поэтажной структуры", "expect": ["apps/condo/domains/property/utils/serverSchema/helpers.ts::getUnitsFromSections"]}
+{"q": "где из разобранного справочного описания выделяются город, улица и номер строения", "expect": ["apps/condo/domains/property/utils/serverSchema/helpers.ts::getAddressDetails"]}
+{"q": "где помещениям без явно указанного вида проставляется значение по умолчанию", "expect": ["apps/condo/domains/property/utils/unitTypeNormalization.ts::withDefaultUnitType"]}
+{"q": "как сделать, чтобы квартира 10 в списке шла после девятой, а не сразу за первой", "expect": ["apps/condo/domains/contact/utils/normalizeUnitNameForSort.ts::normalizeUnitNameForSort"]}
+{"q": "как по телефону и почте вошедшего человека построить условие поиска его записей в справочнике", "expect": ["apps/condo/domains/contact/utils/serverSchema/contactIdentityConditions.ts::getContactIdentityConditions"]}
+{"q": "как по квартире и телефону из справочника управляющей компании найти учётную запись жителя в мобильном приложении", "expect": ["apps/condo/domains/contact/utils/serverSchema/findResidentByContact.ts::findResidentByContact"]}
+{"q": "где значение настройки из переменных запуска читается с проверкой, что это целое больше нуля", "expect": ["apps/condo/domains/common/utils/envPositiveInt.ts::envPositiveInt"]}
+{"q": "как измеряется, насколько подтормаживает основной поток исполнения в рабочем процессе", "expect": ["apps/condo/domains/common/utils/incidentSnapshot.ts::measureEventLoopLagMs"]}
+{"q": "где собирается перечень запросов, которые прямо сейчас выполняются в хранилище данных", "expect": ["apps/condo/domains/common/utils/incidentSnapshot.ts::collectPostgresActivity"]}
+{"q": "где текстовая сводка кэш-сервера разбирается в набор именованных полей", "expect": ["apps/condo/domains/common/utils/incidentSnapshot.ts::parseRedisInfo"]}
+{"q": "где при аварии сохраняется общая диагностическая выжимка по базе, очередям и процессам", "expect": ["apps/condo/domains/common/utils/incidentSnapshot.ts::collectIncidentSnapshot"]}
+{"q": "как находятся расписания заданий, оставшиеся от давно удалённого кода", "expect": ["apps/condo/domains/common/utils/cronMonitor.ts::selectPrunableRepeatables"]}
+{"q": "что мешает администратору вручную запустить фоновое задание второй раз, пока такое же ещё выполняется", "expect": ["apps/condo/domains/common/utils/cronMonitor.ts::performGuardedManualRun"]}
+{"q": "где отбираются сломавшиеся задания, которые администратор хочет удалить пачкой", "expect": ["apps/condo/domains/common/utils/cronMonitor.ts::selectFailedJobsForClearing"]}
+{"q": "как прикидывается типичная длительность одной регулярной работы по её прошлым выполнениям", "expect": ["apps/condo/domains/common/utils/cronMonitor.ts::estimateRunDurationMs"]}
+{"q": "где число переводится в удобные единицы измерения объёма памяти для показа на экране", "expect": ["apps/condo/domains/common/components/cronMonitor/incidentSnapshotView.ts::formatBytesValue"]}
+{"q": "как из строки расписания вычисляются моменты суток, в которые задание будет запущено", "expect": ["apps/condo/domains/common/components/cronMonitor/utils.ts::getCronDailySlots"]}
+{"q": "как упорядочить регулярные работы так, чтобы самые проблемные оказались в начале списка", "expect": ["apps/condo/domains/common/components/cronMonitor/utils.ts::compareTasksWorstFirst"]}
+{"q": "где старые строки журнала правок удаляются порциями, чтобы не положить базу", "expect": ["apps/condo/domains/common/tasks/cleanupHistoryRecords.js::deleteExpiredHistoryBatched"]}
+{"q": "куда обращается сервер, чтобы получить варианты дополнения при наборе местоположения", "expect": ["apps/condo/domains/common/utils/serverSideAddressApi.js::getAddressSuggestions"]}
+{"q": "как из выгрузки убираются повторяющиеся одинаковые проводки", "expect": ["apps/condo/domains/billing/utils/dedupePayments.js::dedupePayments"]}
+{"q": "где номер счёта, налоговый номер и код банка чистятся от лишних символов перед сопоставлением", "expect": ["apps/condo/domains/billing/schema/resolvers/recipientResolver.ts::normalizeRequisites"]}
+{"q": "как из стороннего сервиса начислений выкачиваются все проводки, когда их больше одной страницы", "expect": ["apps/condo/domains/billing/integration/easyBilling/client.js::getAllPayments"]}
+{"q": "где решается, отдать ли жильцу полную или обезличенную версию вложения с квитанцией", "expect": ["apps/condo/domains/billing/schema/AllResidentBillingReceiptsService.js::getFile"]}
+{"q": "где ловится ситуация, когда один и тот же расчётный счёт привязан сразу к двум подключениям приёма денег", "expect": ["apps/condo/domains/acquiring/utils/acquiringContextRouting.js::findBankAccountRoutingConflict"]}
+{"q": "как деньги при оплате картой сразу направляются на счёт подключённого продавца, а не на нашу площадку", "expect": ["apps/condo/domains/acquiring/integrations/infra/adapters/stripe/utils.js::buildDestinationChargeParams"]}
+{"q": "где отказы внешнего карточного процессинга превращаются в наши внутренние коды", "expect": ["apps/condo/domains/acquiring/integrations/infra/adapters/stripe/utils.js::handleStripeError"]}
+{"q": "где задан обязательный набор методов, который должна реализовать любая интеграция приёма денег", "expect": ["apps/condo/domains/acquiring/integrations/core/ports/PaymentGatewayPort.js::PaymentGatewayPort"]}
+{"q": "где проверяется, что сумма передана строкой и в ней не больше двух знаков после запятой", "expect": ["apps/condo/domains/acquiring/schema/RegisterExternalPaymentService.js::isValidDecimal"]}
+{"q": "где сумма переводится в копейки перед отправкой в банк", "expect": ["apps/condo/domains/acquiring/integrations/application/utils.js::toMinorUnits"]}
+{"q": "чем заполняются поля формы с реквизитами продавца при первом открытии настроек приёма денег", "expect": ["apps/condo/domains/acquiring/utils/paymentSettings.ts::pickInitialRecipient"]}
+{"q": "как узнать, по каким видам услуг этой организации вообще приходят начисления", "expect": ["apps/condo/domains/resident/utils/serverSchema/billedPaymentCategories.ts::getBilledCategoryIds"]}
+{"q": "как узнать, пользуется ли кто-то из жильцов конкретной квартиры мобильным приложением", "expect": ["apps/condo/domains/resident/utils/serverSchema/residentsWithApp.js::getUnitAppStatus"]}
+{"q": "где решается, кому позволено загружать и удалять вложения организации", "expect": ["apps/condo/domains/document/access/Document.ts::canManageDocuments"]}
+{"q": "где описано, из каких позиций с ценой и количеством состоит выставленный жильцу счёт", "expect": ["apps/condo/domains/marketplace/schema/fields/invoiceRows.js::INVOICE_ROWS_FIELD"]}
+{"q": "где счета, которые так и не оплатили за долгое время, снимаются автоматически", "expect": ["apps/condo/domains/marketplace/tasks/cancelOldInvoices.js::cancelOldInvoices"]}
+{"q": "где длинный входящий текст урезается до короткой строки для показа в извещении", "expect": ["apps/condo/domains/chat/RocketChatWebhookMiddleware.js::getMessagePreview"]}
+{"q": "как вернуть человека в переписку по ранее сохранённому ключу, без повторного ввода данных", "expect": ["packages/embedded-chat/src/auth/loginWithResumeToken.ts::loginWithResumeToken"]}
+{"q": "где ответ сервера переписки приводится к нашему внутреннему виду записи", "expect": ["packages/embedded-chat/src/api/EmbeddedChatApi.ts::normalizeMessage"]}
+{"q": "как оформляется разрешение на въезд, если заявитель не проживает в этом доме", "expect": ["apps/pass/domains/pass/utils/serverSchema/resolvedHelpers.js::connectContactToPassTicketByNonResident"]}
+{"q": "где из разметки страницы вычищаются угловые скобки, чтобы остался только читаемый текст", "expect": ["apps/condo/domains/ai-agent/server/rag/extract.js::_stripHtmlTags"]}
+{"q": "где проверяется девятизначный код банка получателя", "expect": ["apps/condo/domains/banking/utils/validate/routingNumber.utils.js::validateRoutingNumber"]}
+{"q": "где проверяется корректность налогового идентификатора компании", "expect": ["apps/condo/domains/banking/utils/validate/tin.utils.js::validateTin"]}
+{"q": "через сколько будет следующая попытка, если внешняя система не приняла отправку", "expect": ["packages/webhooks/utils/webhookPayload.ts::calculateNextRetryAt"]}
+{"q": "где вычисляется, в какие потоки конкретный сотрудник организации вправе слать и получать события", "expect": ["packages/messaging/adapters/nats/natsJwt.ts::computePermissions"]}
+{"q": "где собирается перечень потоков событий, которые разрешено слушать конкретному человеку", "expect": ["packages/messaging/core/AccessControl.ts::getAvailableChannels"]}
+{"q": "как обмен сообщениями с родительским окном превратить в вызов, которого можно дождаться", "expect": ["packages/bridge/src/promisify.ts::promisifySend"]}
+{"q": "где после любого изменения данных на клиенте рассылается общее событие для подписчиков", "expect": ["packages/next/_useEmitterMutation.ts::_useEmitterMutation"]}
+{"q": "как по адресу страницы понять, какая опция тарифа нужна для доступа к ней", "expect": ["apps/condo/domains/subscription/constants/routeFeatureMapping.ts::getRequiredFeature"]}
+{"q": "где сервер обращается к внешней службе, чтобы убедиться, что форму заполнил не робот", "expect": ["apps/condo/domains/user/utils/turnstile.js::captchaCheck"]}
+{"q": "где заранее находят оборудование, у которого скоро заканчивается срок гарантии", "expect": ["apps/condo/domains/equipment/tasks/checkWarrantyExpiry.js::checkWarrantyExpiry"]}
+{"q": "where is the required set of methods that every money-taking integration must implement declared", "expect": ["apps/condo/domains/acquiring/integrations/core/ports/PaymentGatewayPort.js::PaymentGatewayPort"]}
+{"q": "where does the code find out how much the main execution thread is stalling inside a background process", "expect": ["apps/condo/domains/common/utils/incidentSnapshot.ts::measureEventLoopLagMs"]}
+{"q": "how are repeated identical financial transactions removed from an imported list", "expect": ["apps/condo/domains/billing/utils/dedupePayments.js::dedupePayments"]}
+{"q": "where is an incoming provider callback rejected because it came from an unexpected network address", "expect": ["apps/condo/domains/notification/MessaggioWebhookMiddleware.js::isAllowedIp"]}
+{"q": "how is a subscriber number masked before it goes into the logs", "expect": ["apps/condo/domains/notification/adapters/smsAdapter.ts::redactPhone"]}
+{"q": "where is the amount converted into cents before it is handed over to the bank", "expect": ["apps/condo/domains/acquiring/integrations/application/utils.js::toMinorUnits"]}
+{"q": "what stops an operator from triggering the same background job twice while it is still in flight", "expect": ["apps/condo/domains/common/utils/cronMonitor.ts::performGuardedManualRun"]}
+{"q": "how does the backend confirm with an external service that a form was filled by a person and not a script", "expect": ["apps/condo/domains/user/utils/turnstile.js::captchaCheck"]}
+{"q": "where does the code make apartment 10 come after apartment 9 in a list instead of right after 1", "expect": ["apps/condo/domains/contact/utils/normalizeUnitNameForSort.ts::normalizeUnitNameForSort"]}
+{"q": "where are leftover job schedules that no longer exist in the source code detected", "expect": ["apps/condo/domains/common/utils/cronMonitor.ts::selectPrunableRepeatables"]}
+{"q": "how is the cost of a neural network call turned into internal billing points", "expect": ["apps/condo/domains/ai-agent/server/llm/pricing.ts::computeCreditsConsumed"]}
+{"q": "how is a conversation with a bot handed over to a live support operator", "expect": ["apps/condo/domains/ai-agent/server/chat/escalateResidentChatToHuman.ts::escalateResidentChatToHuman"]}

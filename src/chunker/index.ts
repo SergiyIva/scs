@@ -20,9 +20,10 @@ export function chunkFile(
   text: string,
   blobSha: string,
   budget: ChunkBudget,
+  callers?: Map<string, string[]>,
 ): FileChunks {
   if (isMarkdown(path)) return chunkMarkdown(repo, path, text, blobSha, budget)
-  return chunkCode(repo, path, text, blobSha, budget)
+  return chunkCode(repo, path, text, blobSha, budget, callers)
 }
 
 function chunkCode(
@@ -31,9 +32,10 @@ function chunkCode(
   text: string,
   blobSha: string,
   budget: ChunkBudget,
+  callers?: Map<string, string[]>,
 ): FileChunks {
   const lang = langFor(path)
-  const { imports, exports, candidates, sourceFile } = parseFile(
+  const { imports, exports, candidates, sourceFile, moduleDoc } = parseFile(
     path,
     text,
     budget.maxTokens,
@@ -88,7 +90,12 @@ function chunkCode(
 
   const all: Piece[] = card ? [card, ...merged] : merged
 
-  return { path, lang, blobSha, chunks: assemble({ repo, path, exports, imports }, all, budget) }
+  return {
+    path,
+    lang,
+    blobSha,
+    chunks: assemble({ repo, path, exports, imports, moduleDoc, callers }, all, budget),
+  }
 }
 
 function toPiece(c: Candidate, body: string, lineOf: (o: number) => number): Piece {
@@ -101,6 +108,7 @@ function toPiece(c: Candidate, body: string, lineOf: (o: number) => number): Pie
     parentChain: c.parentChain,
     exported: c.exported,
     doc: c.doc,
+    parentDoc: c.parentDoc ?? null,
   }
 }
 
@@ -150,6 +158,7 @@ function splitOversized(
     parentChain: c.parentChain,
     exported: c.exported,
     doc: c.doc,
+    parentDoc: c.parentDoc ?? null,
   }))
 }
 

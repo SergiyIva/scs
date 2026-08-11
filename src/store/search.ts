@@ -106,9 +106,24 @@ export async function search(opts: SearchOptions): Promise<SearchHit[]> {
     : `SELECT id, ROW_NUMBER() OVER (ORDER BY dist) AS rank FROM (
          SELECT l.id, cand.dist
            FROM (SELECT content_hash, embedding <=> $2::vector AS dist
-                   FROM chunks
+                   FROM chunks c
                   WHERE $2::vector IS NOT NULL
                     AND model_id = $12
+                    -- Годным считается только чанк, у которого есть локация
+                    -- в нужном репозитории. Без этого условия кандидатов молча
+                    -- съедали ДВА класса лишних векторов: история git и —
+                    -- гораздо хуже — осиротевшие вектора прошлых конфигураций
+                    -- чанкера, которые остаются в таблице до сборки мусора.
+                    -- Отбор шёл по chunks, фильтрация — после join'а, поэтому
+                    -- на запрос возвращалось 9 результатов вместо 20, и ошибки
+                    -- при этом не возникало. Итеративный обход HNSW (включён
+                    -- ниже) продолжает поиск, пока не наберёт нужное число.
+                    AND EXISTS (
+                      SELECT 1 FROM chunk_locations l
+                       WHERE l.content_hash = c.content_hash
+                         AND l.repo_id = (SELECT id FROM repo)
+                         AND ($13::bool OR l.path NOT LIKE '@deleted/%')
+                    )
                   ORDER BY embedding <=> $2::vector
                   LIMIT $6 * ${VEC_OVERFETCH}) cand
            JOIN chunk_locations l ON l.content_hash = cand.content_hash

@@ -14,6 +14,8 @@ import { measureDepth, formatDepth } from '../eval/depth.js'
 import { exportChunks, importChunks } from '../store/transfer.js'
 import { indexHistory } from '../indexer/history.js'
 import { loadChains, measureCollapse, formatCollapse } from '../eval/collapse.js'
+import { checkIndex, formatHealth, indexProblems } from '../store/doctor.js'
+import { runAcceptance, formatAcceptance, FROZEN_THRESHOLDS } from '../eval/accept.js'
 
 const program = new Command()
 program.name('scs').description('Семантический поиск по коду').version('0.1.0')
@@ -152,9 +154,10 @@ program
   .description('измерить качество поиска на golden-наборе')
   .option('--golden <path>', 'файл .jsonl с запросами', '')
   .option('--mode <modes>', 'режимы через запятую', 'hybrid,semantic,lexical')
-  .action(async (name: string, opts: { golden: string; mode: string }) => {
+  .option('--unseal', 'открыть отложенный набор (только один раз, после заморозки конфигурации)')
+  .action(async (name: string, opts: { golden: string; mode: string; unseal?: boolean }) => {
     const path = opts.golden || `src/eval/golden.${name}.jsonl`
-    const golden = loadGolden(path)
+    const golden = loadGolden(path, { unseal: opts.unseal })
     const modes = opts.mode.split(',').map((m) => m.trim() as SearchMode)
 
     const results = []
@@ -167,8 +170,11 @@ program
   .description('ранг ожидаемого ответа в векторной выдаче: провал полноты или ранжирования')
   .option('--golden <path>', 'файл .jsonl с запросами', '')
   .option('--depth <n>', 'до какой глубины искать ответ', '300')
-  .action(async (name: string, opts: { golden: string; depth: string }) => {
-    const golden = loadGolden(opts.golden || `src/eval/golden.${name}.jsonl`)
+  .option('--unseal', 'открыть отложенный набор')
+  .action(async (name: string, opts: { golden: string; depth: string; unseal?: boolean }) => {
+    const golden = loadGolden(opts.golden || `src/eval/golden.${name}.jsonl`, {
+      unseal: opts.unseal,
+    })
     const depth = Number(opts.depth)
     console.log(formatDepth([await measureDepth(name, golden, depth)], depth))
   })
@@ -231,6 +237,34 @@ program
       `Загружено новых: ${s.chunks}, уже было: ${s.skipped}, ${(s.ms / 1000).toFixed(1)} с\n` +
         `Дальше: scs index <repo> — он соберёт локации и не пересчитает ни одного вектора.`,
     )
+  })
+
+program
+  .command('doctor <repo>')
+  .description('здоровье индекса: сверка приближённой выдачи с точным перебором')
+  .option('--golden <path>', 'файл .jsonl с запросами', '')
+  .option('--unseal', 'открыть отложенный набор')
+  .action(async (name: string, opts: { golden: string; unseal?: boolean }) => {
+    const golden = loadGolden(opts.golden || `src/eval/golden.${name}.jsonl`, {
+      unseal: opts.unseal,
+    })
+    const health = await checkIndex(name, golden)
+    console.log(formatHealth(health))
+    // Молчаливый успех при найденных проблемах делает команду бесполезной
+    // в конвейере: её зовут именно затем, чтобы остановить выпуск.
+    if (indexProblems(health).length) process.exitCode = 1
+  })
+
+program
+  .command('accept <repo>')
+  .description('приёмочный прогон: замороженные пороги, отпечаток конфигурации, код возврата')
+  .requiredOption('--golden <path>', 'набор, по которому принимаем')
+  .option('--unseal', 'открыть отложенный набор — делается ОДИН раз')
+  .action(async (name: string, opts: { golden: string; unseal?: boolean }) => {
+    const golden = loadGolden(opts.golden, { unseal: opts.unseal })
+    const result = await runAcceptance(name, golden, opts.golden)
+    console.log(formatAcceptance(result, FROZEN_THRESHOLDS))
+    if (result.failures.length) process.exitCode = 1
   })
 
 program
