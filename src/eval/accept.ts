@@ -1,6 +1,5 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { readFileSync } from 'node:fs'
 import { search } from '../store/search.js'
 import { loadConfig } from '../config.js'
 import { Embedder } from '../embed/client.js'
@@ -106,16 +105,30 @@ export function wilsonLower(hits: number, n: number, z = 1.96): number {
 }
 
 /**
- * Полный SHA и состояние дерева.
+ * Полный SHA и дайджест состояния дерева.
  *
- * Короткого хэша мало: незакоммиченные правки подписались бы чужим коммитом,
- * и результат приёмки оказался бы приписан состоянию, которого не существует.
+ * Короткого хэша мало: незакоммиченные правки подписались бы чужим коммитом.
+ * Счётчика изменённых файлов тоже мало: два разных грязных состояния выглядят
+ * одинаково, а именно в грязном состоянии и важно знать, ЧТО именно измерено.
+ * Поэтому берётся дайджест патча (индекс плюс рабочее дерево) вместе с хэшами
+ * неотслеживаемых файлов — воспроизвести по нему нельзя, но отличить одно
+ * состояние от другого можно.
  */
 function gitState(): string {
+  const git = (args: string[], input?: string) =>
+    execFileSync('git', args, { encoding: 'utf8', maxBuffer: 64e6, ...(input ? { input } : {}) })
+
   try {
-    const sha = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
-    const dirty = execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim()
-    return dirty ? `${sha} + НЕЗАКОММИЧЕННЫЕ ПРАВКИ (${dirty.split('\n').length} файлов)` : sha
+    const sha = git(['rev-parse', 'HEAD']).trim()
+    const patch = git(['diff', 'HEAD'])
+    const untracked = git(['ls-files', '--others', '--exclude-standard']).trim()
+    if (!patch && !untracked) return sha
+
+    // Содержимое неотслеживаемых файлов сворачиваем через git hash-object:
+    // читать их самим незачем, а хэши гарантируют, что подмена содержимого
+    // изменит дайджест.
+    const untrackedHashes = untracked ? git(['hash-object', '--stdin-paths'], `${untracked}\n`) : ''
+    return `${sha} + НЕЗАКОММИЧЕННЫЕ ПРАВКИ sha256:${sha256(patch + untracked + untrackedHashes)}`
   } catch {
     return '(вне git)'
   }
@@ -134,6 +147,12 @@ export async function runAcceptance(
   const cfg = loadConfig()
   const modelId = await new Embedder().model()
   const rerankHealth = cfg.search.rerank.enabled ? await new Reranker().health() : null
+
+  // Хэш считается от ТОГО, что оценивается, и ДО прогона. Хэширование файла
+  // после цикла подписывало бы результат содержимым, которое могло измениться
+  // за время прогона, а при передаче массива, не совпадающего с файлом, —
+  // просто чужим содержимым.
+  const datasetDigest = sha256(golden.map((g) => `${g.q}\u0000${g.expect.join('\u0001')}`).join('\n'))
 
   let hit1 = 0
   let hit5 = 0
@@ -196,7 +215,7 @@ export async function runAcceptance(
     p95ms: times[Math.floor(times.length * 0.95)] ?? 0,
     fingerprint: {
       коммит: gitState(),
-      набор: `${goldenPath} sha256:${sha256(readFileSync(goldenPath, 'utf8'))}`,
+      набор: `${goldenPath} (${golden.length} записей) sha256:${datasetDigest}`,
       эмбеддер: modelId,
       реранкер: !cfg.search.rerank.enabled
         ? 'выключен в конфиге'

@@ -26,7 +26,17 @@ export class Reranker {
     try {
       const res = await fetch(`${this.url}/health`, { signal: AbortSignal.timeout(3000) })
       if (!res.ok) return null
-      return (await res.json()) as { model: string; device: string; dtype: string }
+
+      // Ответ проверяется по полям, а не приводится типом: сервис, вернувший
+      // 200 и пустой объект, иначе прошёл бы проверку приёмки, а в отпечаток
+      // уехало бы «undefined (undefined, undefined)».
+      const data: unknown = await res.json()
+      if (typeof data !== 'object' || data === null) return null
+      const { model, device, dtype } = data as Record<string, unknown>
+      if (typeof model !== 'string' || typeof device !== 'string' || typeof dtype !== 'string') {
+        return null
+      }
+      return { model, device, dtype }
     } catch {
       return null
     }

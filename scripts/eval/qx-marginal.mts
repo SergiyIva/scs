@@ -4,6 +4,7 @@ const BR = ['base','kw','hydeQ','hydeD','lex'] as const
 type B = (typeof BR)[number]
 interface PQ { hit: Record<B, number|null> }
 const data: PQ[] = JSON.parse(readFileSync('scratch/out/qx-lists-v2.json','utf8'))
+const golden = loadGolden('src/eval/golden.unitify.jsonl')
 if (data.length !== golden.length) {
   // Кэш и набор сопоставляются по индексу, поэтому расхождение длин означает
   // молча перепутанные запросы, а не мелкое неудобство.
@@ -12,7 +13,6 @@ if (data.length !== golden.length) {
       'Удалите scratch/out/qx-lists-v2.json и пересоберите.',
   )
 }
-const golden = loadGolden('src/eval/golden.unitify.jsonl')
 
 const core: B[] = ['base','kw','hydeQ']
 console.log('Запросы, недоступные сокращённому union (base+kw+hydeQ) при глубине 100:')

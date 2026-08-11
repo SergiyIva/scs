@@ -1,9 +1,11 @@
 /** Сколько ответов теряется между union и окном судьи (топ-30 слияния). */
 import { readFileSync } from 'node:fs'
+import { loadGolden } from '../../src/eval/run.js'
 const BR = ['base','kw','hydeQ','hydeD','lex'] as const
 type B = (typeof BR)[number]
 interface PQ { lists: Record<B,string[]>; hit: Record<B,number|null>; matches: string[] }
 const data: PQ[] = JSON.parse(readFileSync('scratch/out/qx-lists-v2.json','utf8'))
+const golden = loadGolden('src/eval/golden.unitify.jsonl')
 if (data.length !== golden.length) {
   // Кэш и набор сопоставляются по индексу, поэтому расхождение длин означает
   // молча перепутанные запросы, а не мелкое неудобство.
