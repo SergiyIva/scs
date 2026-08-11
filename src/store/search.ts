@@ -8,6 +8,15 @@ import { Reranker } from '../rerank/client.js'
 export type SearchMode = 'hybrid' | 'semantic' | 'lexical'
 
 /**
+ * Отказ реранкера в строгом режиме. Отдельный тип, потому что приёмка обязана
+ * отличать «упала вторая ступень» от «упала БД или эмбеддер»: это разные
+ * диагнозы, и списывать второе на первое значит искать неисправность не там.
+ */
+export class RerankUnavailableError extends Error {
+  override readonly name = 'RerankUnavailableError'
+}
+
+/**
  * Во сколько раз больше чанков берём из HNSW, чем нужно локаций.
  * Один вектор может быть общим для нескольких мест (копипаста, другая ветка),
  * плюс часть кандидатов отсеется фильтром по репозиторию.
@@ -287,7 +296,9 @@ async function rerankHits(
 
   const scores = await new Reranker().score(query, documents)
   if (!scores) {
-    if (strict) throw new Error('реранкер недоступен, а прогон требует продовой конфигурации')
+    if (strict) {
+      throw new RerankUnavailableError('реранкер недоступен, а прогон требует продовой конфигурации')
+    }
     return hits
   }
 

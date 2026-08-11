@@ -1,6 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { search } from '../store/search.js'
+import { db } from '../store/pool.js'
 import { loadConfig } from '../config.js'
 import { Embedder } from '../embed/client.js'
 import { Reranker } from '../rerank/client.js'
@@ -138,6 +139,52 @@ function sha256(text: string): string {
   return createHash('sha256').update(text).digest('hex')
 }
 
+/**
+ * Отпечаток состояния индекса.
+ *
+ * Демон может переиндексировать репозиторий прямо во время прогона, и тогда
+ * первая половина метрик посчитана по одному индексу, вторая по другому,
+ * а итог не соответствует ни тому ни другому. Останавливать демона из приёмки
+ * неправильно (он может быть чужим процессом), поэтому фиксируем состояние
+ * до и после и падаем при расхождении.
+ */
+async function indexGeneration(repo: string): Promise<string> {
+  // Подзапросы, а не два LEFT JOIN от одной таблицы: те давали декартово
+  // произведение локаций на файлы (49k × 7k), и приёмка вешалась на первом же
+  // замере. Ровно этот дефект уже был в `scs status` — повторять его дважды
+  // особенно обидно.
+  const { rows } = await db().query<{ locs: number; chunks: number; last: string | null }>(
+    `SELECT (SELECT count(*)::int FROM chunk_locations l WHERE l.repo_id = r.id) AS locs,
+            (SELECT count(DISTINCT l.content_hash)::int FROM chunk_locations l WHERE l.repo_id = r.id) AS chunks,
+            (SELECT max(f.indexed_at)::text FROM files f WHERE f.repo_id = r.id) AS last
+       FROM repos r WHERE r.name = $1`,
+    [repo],
+  )
+  const g = rows[0]
+  return `${g?.locs ?? 0}/${g?.chunks ?? 0}/${g?.last ?? '—'}`
+}
+
+/**
+ * Канонический дайджест ВСЕХ настроек, влияющих на выдачу.
+ *
+ * Перечислять поля руками — значит однажды поменять вес, которого нет в списке,
+ * и получить два разных прогона с одинаковым отпечатком. Поэтому хэшируется
+ * весь раздел целиком, а в текст выносятся только самые говорящие поля.
+ */
+function settingsDigest(cfg: ReturnType<typeof loadConfig>, thresholds: AcceptThresholds): string {
+  const canonical = (v: unknown): unknown =>
+    Array.isArray(v)
+      ? v.map(canonical)
+      : v && typeof v === 'object'
+        ? Object.fromEntries(
+            Object.entries(v as Record<string, unknown>)
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([k, x]) => [k, canonical(x)]),
+          )
+        : v
+  return sha256(JSON.stringify(canonical({ search: cfg.search, chunk: cfg.chunk, thresholds })))
+}
+
 export async function runAcceptance(
   repo: string,
   golden: GoldenEntry[],
@@ -147,11 +194,15 @@ export async function runAcceptance(
   const cfg = loadConfig()
   const modelId = await new Embedder().model()
   const rerankHealth = cfg.search.rerank.enabled ? await new Reranker().health() : null
+  const embedHealth = await new Embedder().health()
 
   // Хэш считается от ТОГО, что оценивается, и ДО прогона. Хэширование файла
   // после цикла подписывало бы результат содержимым, которое могло измениться
   // за время прогона, а при передаче массива, не совпадающего с файлом, —
   // просто чужим содержимым.
+  const gitBefore = gitState()
+  const indexBefore = await indexGeneration(repo)
+
   const datasetDigest = sha256(golden.map((g) => `${g.q}\u0000${g.expect.join('\u0001')}`).join('\n'))
 
   let hit1 = 0
@@ -169,19 +220,24 @@ export async function runAcceptance(
   ]
 
   let rerankDied: string | null = null
+  let searchDied: string | null = null
 
   for (const entry of golden) {
     const t0 = Date.now()
-    // Ни maxPerFile, ни mode не переопределяются «для удобства замера»:
-    // берётся ровно то, что настроено в проде. strictRerank — единственное
-    // отличие от обычного поиска: в проде отказ реранкера означает деградацию
+    // Ни maxPerFile, ни режим не переопределяются «для удобства замера»:
+    // берётся ровно то, что настроено в проде, включая defaultMode. Единственное
+    // отличие — strictRerank: в проде отказ реранкера означает деградацию
     // выдачи, а в приёмке — что аттестуется не та система. Предварительной
     // проверки /health мало: сервис может упасть на середине прогона.
     let hits
     try {
-      hits = await search({ repo, query: entry.q, k: 50, mode: 'semantic', strictRerank: true })
+      hits = await search({ repo, query: entry.q, k: 50, strictRerank: true })
     } catch (err) {
-      rerankDied = err instanceof Error ? err.message : String(err)
+      // Отказ второй ступени и отказ БД или эмбеддера — разные диагнозы,
+      // и списывать второе на первое значит искать неисправность не там.
+      const message = err instanceof Error ? err.message : String(err)
+      if (err instanceof Error && err.name === 'RerankUnavailableError') rerankDied = message
+      else searchDied = message
       break
     }
     times.push(Date.now() - t0)
@@ -197,6 +253,9 @@ export async function runAcceptance(
       if (rank <= 10) mrr10Sum += 1 / rank
     }
   }
+
+  const gitAfter = gitState()
+  const indexAfter = await indexGeneration(repo)
 
   const n = golden.length || 1
   times.sort((a, b) => a - b)
@@ -214,17 +273,19 @@ export async function runAcceptance(
     p50ms: times[Math.floor(times.length * 0.5)] ?? 0,
     p95ms: times[Math.floor(times.length * 0.95)] ?? 0,
     fingerprint: {
-      коммит: gitState(),
+      коммит: gitBefore,
       набор: `${goldenPath} (${golden.length} записей) sha256:${datasetDigest}`,
-      эмбеддер: modelId,
+      эмбеддер: `${modelId} (бэкенд ${embedHealth?.backend ?? 'неизвестен'})`,
+      индекс: indexBefore,
       реранкер: !cfg.search.rerank.enabled
         ? 'выключен в конфиге'
         : rerankHealth
           ? `${rerankHealth.model} (${rerankHealth.dtype}, ${rerankHealth.device})`
           : 'ВКЛЮЧЁН, НО НЕ ОТВЕЧАЕТ — прогон идёт без второй ступени',
-      выдача: `k=50, maxPerFile=${cfg.search.maxPerFile} (как в проде), режим semantic`,
+      выдача: `k=50, maxPerFile=${cfg.search.maxPerFile}, режим ${cfg.search.defaultMode} (как в проде)`,
       чанки: `target=${cfg.chunk.targetTokens} max=${cfg.chunk.maxTokens} module=${cfg.chunk.moduleDocInHeader} class=${cfg.chunk.classDocInHeader} callers=${cfg.chunk.callersInHeader}`,
       поиск: `ef=${cfg.search.efSearch} cand=${cfg.search.candidates} docPrior=${cfg.search.docPrior} history=${cfg.search.includeDeleted}`,
+      настройки: `sha256:${settingsDigest(cfg, thresholds)} (все поля search и chunk, включая веса, приоритеты и пороги)`,
     },
     failures: [],
   }
@@ -233,6 +294,20 @@ export async function runAcceptance(
   // её вместо продовой нельзя даже при проходных числах.
   if (cfg.search.rerank.enabled && !rerankHealth) {
     result.failures.push('реранкер включён в конфиге, но не отвечает: аттестована не продовая конфигурация')
+  }
+  if (searchDied) {
+    result.failures.push(`поиск отказал на середине прогона: ${searchDied}. Прогон недействителен.`)
+  }
+  if (gitAfter !== gitBefore) {
+    result.failures.push(
+      'рабочее дерево изменилось во время прогона: метрики посчитаны по разным состояниям кода',
+    )
+  }
+  if (indexAfter !== indexBefore) {
+    result.failures.push(
+      `индекс менялся во время прогона (${indexBefore} → ${indexAfter}): ` +
+        'остановите демон и повторите — метрики посчитаны по разным состояниям индекса',
+    )
   }
   if (rerankDied) {
     result.failures.push(`реранкер отказал на середине прогона: ${rerankDied}. Прогон недействителен.`)
