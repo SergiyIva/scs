@@ -1,8 +1,10 @@
 {
   "mcpServers": {
     "code-search": {
-      "command": "node",
-      "args": ["./dist/src/bin/scs-mcp.js"],
+      "command": "/home/sergey/.nvm/versions/node/v22.22.0/bin/node",
+      "args": [
+        "/home/sergey/WebstormProjects/embedded-project/dist/src/bin/scs-mcp.js"
+      ],
       "env": {
         "SCS_REPO": "scs"
       }
