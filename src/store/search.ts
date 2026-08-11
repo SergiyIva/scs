@@ -24,6 +24,8 @@ export interface SearchOptions {
   maxPerFile?: number
   /** Перекрывает search.rerank.enabled — нужно для замеров «с» и «без». */
   rerank?: boolean
+  /** Искать и по удалённому коду из истории git (§21). По умолчанию нет. */
+  includeDeleted?: boolean
 }
 
 interface Row {
@@ -83,6 +85,9 @@ export async function search(opts: SearchOptions): Promise<SearchHit[]> {
   // ними приближённый поиск может не набрать кандидатов вовсе. В этом случае
   // честнее заплатить полным перебором: он медленный, но точный.
   const filtered = Boolean(opts.pathGlob || opts.lang)
+  // История git — отдельное пространство: она отвечает на «где это было раньше»
+  // и в обычном поиске только конкурирует с живым кодом (§21).
+  const includeDeleted = opts.includeDeleted ?? cfg.search.includeDeleted
 
   /**
    * Векторная ветка. Замер на 39 655 чанках показал, что решает не настройка
@@ -108,6 +113,7 @@ export async function search(opts: SearchOptions): Promise<SearchHit[]> {
                   LIMIT $6 * ${VEC_OVERFETCH}) cand
            JOIN chunk_locations l ON l.content_hash = cand.content_hash
           WHERE l.repo_id = (SELECT id FROM repo)
+            AND ($13::bool OR l.path NOT LIKE '@deleted/%')
           ORDER BY cand.dist
           LIMIT $6
        ) ranked`
@@ -126,6 +132,7 @@ export async function search(opts: SearchOptions): Promise<SearchHit[]> {
          -- а без упоминания $12 в этой ветке запрос ещё и падал на числе
          -- параметров — ошибка вылезала только под --path и --lang.
          AND ($12::text IS NULL OR c.model_id = $12)
+         AND ($13::bool OR l.path NOT LIKE '@deleted/%')
     ),
     vec AS (
       ${vecSql}
@@ -181,6 +188,7 @@ export async function search(opts: SearchOptions): Promise<SearchHit[]> {
     cfg.search.vectorWeight,
     cfg.search.lexicalWeight,
     modelId,
+    includeDeleted,
   ]
 
   // ef_search задаётся на сессию, поэтому запрос идёт в транзакции с SET LOCAL:

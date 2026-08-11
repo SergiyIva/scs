@@ -2,26 +2,15 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="866e2c1e-db1c-4c25-b00b-778e427fc5fc" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/.gitignore" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/claudeCodeTabState.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/claudeCodeTabState.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/README.md" beforeDir="false" afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/docs/DESIGN.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/DESIGN.md" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/package-lock.json" beforeDir="false" afterPath="$PROJECT_DIR$/package-lock.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/package.json" beforeDir="false" afterPath="$PROJECT_DIR$/package.json" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/services/embed-ollama/server.ts" beforeDir="false" afterPath="$PROJECT_DIR$/services/embed-ollama/server.ts" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docs/RECALL85.md" beforeDir="false" afterPath="$PROJECT_DIR$/docs/RECALL85.md" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/bin/scs.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/bin/scs.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/chunker/index.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/chunker/index.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/chunker/typescript.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/chunker/typescript.ts" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/config.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/config.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/eval/run.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/eval/run.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/indexer/git.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/indexer/git.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/indexer/scan.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/indexer/scan.ts" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/mcp/server.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/mcp/server.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/store/priors.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/store/priors.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/store/schema.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/store/schema.ts" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/src/store/search.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/store/search.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/types.ts" beforeDir="false" afterPath="$PROJECT_DIR$/src/types.ts" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/test/chunker.test.ts" beforeDir="false" afterPath="$PROJECT_DIR$/test/chunker.test.ts" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -47,7 +36,7 @@
     &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
     &quot;RunOnceActivity.typescript.service.memoryLimit.init&quot;: &quot;true&quot;,
     &quot;codeWithMe.voiceChat.enabledByDefault&quot;: &quot;false&quot;,
-    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;feat/npu-support&quot;,
     &quot;javascript.preferred.runtime.type.id&quot;: &quot;node&quot;,
     &quot;nodejs_package_manager_path&quot;: &quot;npm&quot;,
     &quot;ts.external.directory.path&quot;: &quot;/home/sergey/WebstormProjects/embedded-project/node_modules/typescript/lib&quot;
@@ -69,6 +58,12 @@
       <updated>1786003841107</updated>
       <workItem from="1786003842113" duration="11238000" />
       <workItem from="1786022798653" duration="9275000" />
+      <workItem from="1786096384477" duration="934000" />
+      <workItem from="1786097323168" duration="839000" />
+      <workItem from="1786098166175" duration="82000" />
+      <workItem from="1786122013541" duration="4000" />
+      <workItem from="1786375663935" duration="3817000" />
+      <workItem from="1786434416113" duration="3274000" />
     </task>
     <servers />
   </component>

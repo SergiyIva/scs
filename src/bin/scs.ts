@@ -115,11 +115,12 @@ program
   .option('-m, --mode <mode>', 'semantic | hybrid | lexical', '')
   .option('--path <glob>', 'фильтр по пути (SQL LIKE, например src/%)')
   .option('--lang <lang>', 'фильтр по языку')
+  .option('--history', 'искать и по удалённым файлам из истории git')
   .action(
     async (
       name: string,
       queryParts: string[],
-      opts: { top: string; mode: string; path?: string; lang?: string },
+      opts: { top: string; mode: string; path?: string; lang?: string; history?: boolean },
     ) => {
       const hits = await search({
         repo: name,
@@ -128,6 +129,7 @@ program
         mode: (opts.mode || undefined) as SearchMode | undefined,
         pathGlob: opts.path,
         lang: opts.lang,
+        includeDeleted: opts.history,
       })
       console.log(formatHits(hits, loadConfig().search.tokenBudget))
     },

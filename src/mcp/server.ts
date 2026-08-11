@@ -53,9 +53,16 @@ export function buildServer(): McpServer {
           .enum(['hybrid', 'semantic', 'lexical'])
           .optional()
           .describe('semantic по умолчанию (замерено как лучший); hybrid добавляет точные слова'),
+        include_history: z
+          .boolean()
+          .optional()
+          .describe(
+            'Искать и по удалённым файлам из истории git. Нужно для вопросов «а как это ' +
+              'было до рефакторинга»; в обычном поиске только мешает, поэтому выключено.',
+          ),
       },
     },
-    async ({ query, k, repo, path_glob, lang, mode }) => {
+    async ({ query, k, repo, path_glob, lang, mode, include_history }) => {
       const hits = await search({
         repo: repo ?? defaultRepo,
         query,
@@ -63,6 +70,7 @@ export function buildServer(): McpServer {
         mode: mode as SearchMode | undefined,
         pathGlob: path_glob,
         lang,
+        includeDeleted: include_history,
       })
       return text(formatHits(hits, cfg.search.tokenBudget))
     },
