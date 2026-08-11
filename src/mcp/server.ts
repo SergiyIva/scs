@@ -206,7 +206,8 @@ export function buildServer(): McpServer {
       const s = await status()
       const lines = s.repos.map(
         (r) =>
-          `${r.name}: файлов ${r.files}, чанков ${r.chunks}, индексация ${
+          `${r.name}: файлов ${r.files}, чанков ${r.chunks}` +
+          `${r.history ? `, из истории git ещё ${r.history}` : ''}, индексация ${
             r.lastIndexed?.toISOString().replace('T', ' ').slice(0, 19) ?? 'не выполнялась'
           }`,
       )

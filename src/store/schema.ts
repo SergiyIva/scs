@@ -39,7 +39,7 @@ export async function migrate(): Promise<string[]> {
 export interface DbStatus {
   connected: boolean
   migrations: string[]
-  repos: { name: string; files: number; chunks: number; lastIndexed: Date | null }[]
+  repos: { name: string; files: number; history: number; chunks: number; lastIndexed: Date | null }[]
   totalChunks: number
 }
 
@@ -55,8 +55,15 @@ export async function status(): Promise<DbStatus> {
   const { rows: repos } = await db().query(`
     SELECT r.name,
            r.last_indexed_at AS "lastIndexed",
-           (SELECT count(*)::int FROM files f           WHERE f.repo_id = r.id) AS files,
-           (SELECT count(*)::int FROM chunk_locations l WHERE l.repo_id = r.id) AS chunks
+           -- История git (§21) заводит псевдофайлы @deleted/, и считать их
+           -- наравне с живыми значит показывать в статусе больше файлов,
+           -- чем есть в репозитории: 8309 против 7143 на unitify.
+           (SELECT count(*)::int FROM files f
+             WHERE f.repo_id = r.id AND f.path NOT LIKE '@deleted/%') AS files,
+           (SELECT count(*)::int FROM files f
+             WHERE f.repo_id = r.id AND f.path LIKE '@deleted/%') AS history,
+           (SELECT count(*)::int FROM chunk_locations l
+             WHERE l.repo_id = r.id AND l.path NOT LIKE '@deleted/%') AS chunks
       FROM repos r
      ORDER BY r.name
   `)

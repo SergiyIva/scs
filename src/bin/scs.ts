@@ -45,11 +45,12 @@ program
       console.log('\nРепозиториев нет. Добавьте: scs repo add <path> --name <name>')
       return
     }
-    console.log('\nрепозиторий           файлов   чанков  последняя индексация')
+    console.log('\nрепозиторий           файлов   чанков  история  последняя индексация')
     for (const r of s.repos) {
       const when = r.lastIndexed ? r.lastIndexed.toISOString().replace('T', ' ').slice(0, 19) : '—'
       console.log(
-        `${r.name.padEnd(20)} ${String(r.files).padStart(7)} ${String(r.chunks).padStart(8)}  ${when}`,
+        `${r.name.padEnd(20)} ${String(r.files).padStart(7)} ${String(r.chunks).padStart(8)} ` +
+          `${String(r.history || '—').padStart(8)}  ${when}`,
       )
     }
   })
