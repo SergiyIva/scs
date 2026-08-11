@@ -361,13 +361,24 @@ function diversify(hits: SearchHit[], k: number, maxPerFile: number): SearchHit[
   return kept.slice(0, k)
 }
 
-/** Похожие по смыслу чанки — второй ключевой сценарий: дубли логики. */
+/**
+ * Похожие по смыслу чанки — второй ключевой сценарий: дубли логики.
+ *
+ * История git исключается по умолчанию, и это не мелочь. На репозитории,
+ * где идёт миграция .js → .ts, ближайшим соседом только что переписанного
+ * файла оказывается его собственный удалённый предок с близостью 0.96 —
+ * и вся выдача превращается в чужое прошлое вместо смысловых дублей.
+ * Замечено на живой работе: шесть результатов из шести были `@deleted/`
+ * копиями того же файла. `excludeSameFile` тут не помогает: он сравнивает
+ * пути, а у копии из истории путь другой.
+ */
 export async function findSimilar(
   repo: string,
   path: string,
   line: number,
   k: number,
   excludeSameFile: boolean,
+  includeDeleted = false,
 ): Promise<SearchHit[]> {
   const { rows } = await db().query<{ content_hash: Buffer }>(
     `SELECT l.content_hash
@@ -394,9 +405,10 @@ export async function findSimilar(
       WHERE a.content_hash = $1
         AND r.name = $2
         AND ($3::bool = false OR l.path <> $4)
+        AND ($6::bool OR l.path NOT LIKE '@deleted/%')
       ORDER BY c.embedding <=> a.embedding
       LIMIT $5`,
-    [anchor.content_hash, repo, excludeSameFile, path, k],
+    [anchor.content_hash, repo, excludeSameFile, path, k, includeDeleted],
   )
 
   return hits.map((r) => ({

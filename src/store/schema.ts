@@ -39,7 +39,14 @@ export async function migrate(): Promise<string[]> {
 export interface DbStatus {
   connected: boolean
   migrations: string[]
-  repos: { name: string; files: number; history: number; chunks: number; lastIndexed: Date | null }[]
+  repos: {
+    name: string
+    files: number
+    history: number
+    chunks: number
+    lastIndexed: Date | null
+    lastChange: Date | null
+  }[]
   totalChunks: number
 }
 
@@ -55,6 +62,14 @@ export async function status(): Promise<DbStatus> {
   const { rows: repos } = await db().query(`
     SELECT r.name,
            r.last_indexed_at AS "lastIndexed",
+           -- Время последнего ПОЛНОГО прохода отвечает не на тот вопрос, который
+           -- задают статусу. Спрашивают «моя правка минуту назад уже в индексе?»,
+           -- а демон, доиндексировав один файл, отметку репозитория не трогает —
+           -- и статус показывает вчерашний полный проход при свежем индексе.
+           -- files.indexed_at обновляется на каждом реально переиндексированном
+           -- файле, поэтому максимум по нему и есть граница свежести.
+           (SELECT max(f.indexed_at) FROM files f
+             WHERE f.repo_id = r.id AND f.path NOT LIKE '@deleted/%') AS "lastChange",
            -- История git (§21) заводит псевдофайлы @deleted/, и считать их
            -- наравне с живыми значит показывать в статусе больше файлов,
            -- чем есть в репозитории: 8309 против 7143 на unitify.

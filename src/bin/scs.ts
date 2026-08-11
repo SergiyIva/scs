@@ -45,12 +45,15 @@ program
       console.log('\nРепозиториев нет. Добавьте: scs repo add <path> --name <name>')
       return
     }
-    console.log('\nрепозиторий           файлов   чанков  история  последняя индексация')
+    // Две даты, а не одна: полный проход отвечает «когда индексировали всё»,
+    // а правка — «до какого момента индекс видит изменения». При работающем
+    // демоне вторая уходит вперёд, и путать их значит считать индекс устаревшим.
+    console.log('\nрепозиторий           файлов   чанков  история  правка в индексе     полный проход')
     for (const r of s.repos) {
-      const when = r.lastIndexed ? r.lastIndexed.toISOString().replace('T', ' ').slice(0, 19) : '—'
+      const when = (d: Date | null) => (d ? d.toISOString().replace('T', ' ').slice(0, 19) : '—')
       console.log(
         `${r.name.padEnd(20)} ${String(r.files).padStart(7)} ${String(r.chunks).padStart(8)} ` +
-          `${String(r.history || '—').padStart(8)}  ${when}`,
+          `${String(r.history || '—').padStart(8)}  ${when(r.lastChange).padEnd(19)}  ${when(r.lastIndexed)}`,
       )
     }
   })
@@ -117,7 +120,7 @@ program
   .option('-k, --top <n>', 'сколько результатов', '8')
   .option('-m, --mode <mode>', 'semantic | hybrid | lexical', '')
   .option('--path <glob>', 'фильтр по пути (SQL LIKE, например src/%)')
-  .option('--lang <lang>', 'фильтр по языку')
+  .option('--lang <lang>', 'typescript | tsx | javascript | jsx | markdown | mdx')
   .option('--history', 'искать и по удалённым файлам из истории git')
   .action(
     async (
@@ -143,9 +146,22 @@ program
   .description('найти смысловые дубли фрагмента')
   .option('-k, --top <n>', 'сколько результатов', '8')
   .option('--same-file', 'не исключать тот же файл')
+  .option('--history', 'искать дубли и среди удалённых файлов из истории git')
   .action(
-    async (name: string, path: string, line: string, opts: { top: string; sameFile?: boolean }) => {
-      const hits = await findSimilar(name, path, Number(line), Number(opts.top), !opts.sameFile)
+    async (
+      name: string,
+      path: string,
+      line: string,
+      opts: { top: string; sameFile?: boolean; history?: boolean },
+    ) => {
+      const hits = await findSimilar(
+        name,
+        path,
+        Number(line),
+        Number(opts.top),
+        !opts.sameFile,
+        opts.history,
+      )
       console.log(formatHits(hits, loadConfig().search.tokenBudget))
     },
   )
