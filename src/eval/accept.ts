@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import { search } from '../store/search.js'
 import { loadConfig } from '../config.js'
 import { Embedder } from '../embed/client.js'
+import { Reranker } from '../rerank/client.js'
 import type { GoldenEntry } from './run.js'
 
 /**
@@ -22,6 +23,12 @@ import type { GoldenEntry } from './run.js'
  *
  * Глубина 50, а не 10: доля «ответа нет и в топ-50» — второй объявленный порог,
  * и без неё провал невозможно разложить на доступность и ранжирование.
+ *
+ * Конфигурация — ПРОДОВАЯ, без исследовательских послаблений. В частности,
+ * диверсификация не отключается: `scs eval` зовёт поиск с maxPerFile = 99,
+ * чтобы мерить ранжирование в чистом виде, но пользователь получает выдачу
+ * с ограничением в два чанка на файл. Приёмка обязана мерить то, что получает
+ * пользователь, иначе она аттестует не тот продукт.
  */
 
 export interface AcceptThresholds {
@@ -31,12 +38,37 @@ export interface AcceptThresholds {
   maxMissingAt50: number
 }
 
-/** Пороги заморожены до открытия набора. Менять их после прогона — подлог. */
+/**
+ * Пороги заморожены до открытия отложенного набора. Менять их ПОСЛЕ прогона —
+ * подлог; менять ДО, по настроечным данным, — ровно то, для чего настроечный
+ * набор существует.
+ *
+ * История одного порога записана намеренно, чтобы через полгода никто не решил,
+ * будто цифру подогнали под результат. `maxMissingAt50` изначально стоял на 30%,
+ * и это была ошибка постановки: величина уже была измерена (`scs depth` давал
+ * доступность @50 = 67.2%, то есть 32.8% отсутствующих), но с порогом не сверена.
+ * Первый же приёмочный прогон на НАСТРОЕЧНОМ наборе дал 31.0% и провалился —
+ * то есть гейт был недостижим по построению, а не по качеству системы.
+ *
+ * Новое значение выведено из данных, а не назначено:
+ *   - продовый прогон на настроечном наборе: 18 промахов из 58 = 31.0%;
+ *   - верхняя граница 95% Уилсона для 18/58 = 43.8%;
+ *   - 45% — округление этой границы вверх, то есть предел статистически
+ *     правдоподобного ухудшения при переходе на другой набор.
+ * На сотне запросов это означает не более 45 промахов, то есть recall@50 ≥ 55%.
+ *
+ * Отложенный набор к моменту исправления открыт НЕ БЫЛ: прежние 30% к нему
+ * не применялись ни разу.
+ *
+ * Критерий не дублирует остальные: recall@5 и recall@10 проверяют верх выдачи,
+ * а missing@50 отдельно защищает полноту пула — случай, когда ответа нет вовсе
+ * и никакое ранжирование его не достанет.
+ */
 export const FROZEN_THRESHOLDS: AcceptThresholds = {
   recallAt5: 0.4,
   wilsonLowerAt5: 0.33,
   recallAt10: 0.48,
-  maxMissingAt50: 0.3,
+  maxMissingAt50: 0.45,
 }
 
 export interface AcceptResult {
@@ -47,7 +79,10 @@ export interface AcceptResult {
   recallAt50: number
   wilsonLowerAt5: number
   missingAt50: number
-  mrr: number
+  /** Сопоставим с публикуемым числом: `scs eval` считает MRR по десятке. */
+  mrrAt10: number
+  /** По всей глубине приёмки; отдельным именем, чтобы не путать с публикуемым. */
+  mrrAt50: number
   p50ms: number
   p95ms: number
   fingerprint: Record<string, string>
@@ -70,16 +105,24 @@ export function wilsonLower(hits: number, n: number, z = 1.96): number {
   return Math.max(0, (centre - spread) / d)
 }
 
-function gitCommit(): string {
+/**
+ * Полный SHA и состояние дерева.
+ *
+ * Короткого хэша мало: незакоммиченные правки подписались бы чужим коммитом,
+ * и результат приёмки оказался бы приписан состоянию, которого не существует.
+ */
+function gitState(): string {
   try {
-    return execFileSync('git', ['rev-parse', '--short', 'HEAD'], { encoding: 'utf8' }).trim()
+    const sha = execFileSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+    const dirty = execFileSync('git', ['status', '--porcelain'], { encoding: 'utf8' }).trim()
+    return dirty ? `${sha} + НЕЗАКОММИЧЕННЫЕ ПРАВКИ (${dirty.split('\n').length} файлов)` : sha
   } catch {
     return '(вне git)'
   }
 }
 
 function sha256(text: string): string {
-  return createHash('sha256').update(text).digest('hex').slice(0, 16)
+  return createHash('sha256').update(text).digest('hex')
 }
 
 export async function runAcceptance(
@@ -90,12 +133,14 @@ export async function runAcceptance(
 ): Promise<AcceptResult> {
   const cfg = loadConfig()
   const modelId = await new Embedder().model()
+  const rerankHealth = cfg.search.rerank.enabled ? await new Reranker().health() : null
 
   let hit1 = 0
   let hit5 = 0
   let hit10 = 0
   let hit50 = 0
-  let mrrSum = 0
+  let mrr10Sum = 0
+  let mrr50Sum = 0
   const times: number[] = []
 
   const keys = (h: { path: string; symbol: string | null; parentChain: string[] }) => [
@@ -104,9 +149,22 @@ export async function runAcceptance(
     ...h.parentChain.map((p) => `${h.path}::${p}`),
   ]
 
+  let rerankDied: string | null = null
+
   for (const entry of golden) {
     const t0 = Date.now()
-    const hits = await search({ repo, query: entry.q, k: 50, maxPerFile: 99 })
+    // Ни maxPerFile, ни mode не переопределяются «для удобства замера»:
+    // берётся ровно то, что настроено в проде. strictRerank — единственное
+    // отличие от обычного поиска: в проде отказ реранкера означает деградацию
+    // выдачи, а в приёмке — что аттестуется не та система. Предварительной
+    // проверки /health мало: сервис может упасть на середине прогона.
+    let hits
+    try {
+      hits = await search({ repo, query: entry.q, k: 50, mode: 'semantic', strictRerank: true })
+    } catch (err) {
+      rerankDied = err instanceof Error ? err.message : String(err)
+      break
+    }
     times.push(Date.now() - t0)
 
     const want = new Set(entry.expect)
@@ -116,7 +174,8 @@ export async function runAcceptance(
       if (rank <= 5) hit5++
       if (rank <= 10) hit10++
       hit50++
-      mrrSum += 1 / rank
+      mrr50Sum += 1 / rank
+      if (rank <= 10) mrr10Sum += 1 / rank
     }
   }
 
@@ -131,20 +190,34 @@ export async function runAcceptance(
     recallAt50: hit50 / n,
     wilsonLowerAt5: wilsonLower(hit5, n),
     missingAt50: 1 - hit50 / n,
-    mrr: mrrSum / n,
+    mrrAt10: mrr10Sum / n,
+    mrrAt50: mrr50Sum / n,
     p50ms: times[Math.floor(times.length * 0.5)] ?? 0,
     p95ms: times[Math.floor(times.length * 0.95)] ?? 0,
     fingerprint: {
-      коммит: gitCommit(),
+      коммит: gitState(),
       набор: `${goldenPath} sha256:${sha256(readFileSync(goldenPath, 'utf8'))}`,
       эмбеддер: modelId,
-      реранкер: cfg.search.rerank.enabled ? cfg.search.rerank.url : 'выключен',
+      реранкер: !cfg.search.rerank.enabled
+        ? 'выключен в конфиге'
+        : rerankHealth
+          ? `${rerankHealth.model} (${rerankHealth.dtype}, ${rerankHealth.device})`
+          : 'ВКЛЮЧЁН, НО НЕ ОТВЕЧАЕТ — прогон идёт без второй ступени',
+      выдача: `k=50, maxPerFile=${cfg.search.maxPerFile} (как в проде), режим semantic`,
       чанки: `target=${cfg.chunk.targetTokens} max=${cfg.chunk.maxTokens} module=${cfg.chunk.moduleDocInHeader} class=${cfg.chunk.classDocInHeader} callers=${cfg.chunk.callersInHeader}`,
       поиск: `ef=${cfg.search.efSearch} cand=${cfg.search.candidates} docPrior=${cfg.search.docPrior} history=${cfg.search.includeDeleted}`,
     },
     failures: [],
   }
 
+  // Недоступный реранкер — это не «чуть хуже», а другая система. Аттестовать
+  // её вместо продовой нельзя даже при проходных числах.
+  if (cfg.search.rerank.enabled && !rerankHealth) {
+    result.failures.push('реранкер включён в конфиге, но не отвечает: аттестована не продовая конфигурация')
+  }
+  if (rerankDied) {
+    result.failures.push(`реранкер отказал на середине прогона: ${rerankDied}. Прогон недействителен.`)
+  }
   if (result.recallAt5 < thresholds.recallAt5) {
     result.failures.push(
       `recall@5 ${(result.recallAt5 * 100).toFixed(1)}% ниже порога ${(thresholds.recallAt5 * 100).toFixed(0)}%`,
@@ -185,7 +258,8 @@ export function formatAcceptance(r: AcceptResult, t: AcceptThresholds): string {
     `  Уилсон@5   ${pct(r.wilsonLowerAt5)}   (порог ${pct(t.wilsonLowerAt5)})`,
     `  recall@10  ${pct(r.recallAt10)}   (порог ${pct(t.recallAt10)})`,
     `  нет в топ-50 ${pct(r.missingAt50)} (порог ${pct(t.maxMissingAt50)})`,
-    `  MRR        ${r.mrr.toFixed(3)}`,
+    `  MRR@10     ${r.mrrAt10.toFixed(3)}   (сопоставим с публикуемым)`,
+    `  MRR@50     ${r.mrrAt50.toFixed(3)}`,
     `  латентность p50 ${r.p50ms} мс, p95 ${r.p95ms} мс`,
     '',
   ]

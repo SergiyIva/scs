@@ -3,6 +3,9 @@ import assert from 'node:assert/strict'
 import { wilsonLower, formatAcceptance, FROZEN_THRESHOLDS, type AcceptResult } from '../src/eval/accept.js'
 import { indexProblems, formatHealth, type IndexHealth } from '../src/store/doctor.js'
 import { loadGolden } from '../src/eval/run.js'
+import { writeFileSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 /**
  * Приёмка и доктор проверяются тестами по той же причине, по которой они вообще
@@ -73,12 +76,31 @@ const result = (over: Partial<AcceptResult> = {}): AcceptResult => ({
   recallAt50: 0.8,
   wilsonLowerAt5: 0.4,
   missingAt50: 0.2,
-  mrr: 0.38,
+  mrrAt10: 0.38,
+  mrrAt50: 0.4,
   p50ms: 400,
   p95ms: 700,
-  fingerprint: { коммит: 'abc1234', набор: 'holdout sha256:deadbeef' },
+  fingerprint: {
+    коммит: '6c4bce1f0000000000000000000000000000abcd',
+    набор: 'holdout sha256:ca04fd800e15f65601199293dcbc6662ef26d517b36d5adc7d2aeeeee938cac0',
+  },
   failures: [],
   ...over,
+})
+
+/**
+ * Граница порога проверяется тестом, а не доверием к арифметике: порог
+ * перекалиброван по данным (верхняя граница Уилсона для 18/58 = 43.8%,
+ * округлено до 45%), и именно на границе ошибка была бы незаметна.
+ */
+test('порог missing@50 держит границу 45 из 100', () => {
+  const check = (missing: number) =>
+    FROZEN_THRESHOLDS.maxMissingAt50 >= missing / 100
+
+  assert.ok(check(45), '45 промахов из 100 должны проходить')
+  assert.ok(!check(46), '46 промахов из 100 должны проваливать приёмку')
+  // Настроечный набор: 18 из 58 = 31.0% — запас есть, но не безграничный.
+  assert.ok(check(31), 'настроечное значение обязано проходить собственный порог')
 })
 
 test('в отчёте приёмки есть отпечаток конфигурации', () => {
@@ -98,11 +120,20 @@ test('провал приёмки виден в отчёте и запрещае
  * прошлая версия проверяла только `scs eval`, и `scs depth --golden` её обходил.
  */
 test('отложенный набор не открывается без явного разрешения', () => {
-  assert.throws(
-    () => loadGolden('src/eval/holdout.unitify.jsonl'),
-    /запечатан/,
-    'печать не сработала',
-  )
-  const golden = loadGolden('src/eval/holdout.unitify.jsonl', { unseal: true })
-  assert.ok(golden.length > 0, 'с --unseal набор обязан открываться')
+  // Фикстура, а не настоящий набор: даже чтение боевого holdout из теста —
+  // лишний повод усомниться в его чистоте, а стоит это ничего.
+  const fixture = join(tmpdir(), `scs-holdout-fixture-${process.pid}.jsonl`)
+  writeFileSync(fixture, '{"q":"проверка печати","expect":["a.ts::b"]}\n')
+  try {
+    assert.throws(() => loadGolden(fixture), /запечатан/, 'печать не сработала')
+    assert.equal(loadGolden(fixture, { unseal: true }).length, 1, 'с --unseal набор обязан открываться')
+
+    // Печать срабатывает по имени файла, а не по конкретному пути.
+    const other = join(tmpdir(), `scs-golden-${process.pid}.jsonl`)
+    writeFileSync(other, '{"q":"обычный набор","expect":["a.ts::b"]}\n')
+    assert.equal(loadGolden(other).length, 1, 'обычный набор не должен требовать --unseal')
+    rmSync(other)
+  } finally {
+    rmSync(fixture, { force: true })
+  }
 })

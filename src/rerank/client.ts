@@ -15,6 +15,23 @@ export class Reranker {
     private readonly timeoutMs = loadConfig().search.rerank.timeoutMs,
   ) {}
 
+  /**
+   * Кто на самом деле обслуживает запросы, либо null если сервис недоступен.
+   *
+   * Нужно приёмке: отпечаток, в котором стоит URL реранкера, но сам реранкер
+   * не отвечает, аттестует систему БЕЗ второй ступени и не сообщает об этом.
+   * Молчаливая деградация в отчёте о приёмке — худший вид молчаливой деградации.
+   */
+  async health(): Promise<{ model: string; device: string; dtype: string } | null> {
+    try {
+      const res = await fetch(`${this.url}/health`, { signal: AbortSignal.timeout(3000) })
+      if (!res.ok) return null
+      return (await res.json()) as { model: string; device: string; dtype: string }
+    } catch {
+      return null
+    }
+  }
+
   /** Скоры в диапазоне (0,1) в порядке документов, либо null при недоступности. */
   async score(query: string, documents: string[]): Promise<number[] | null> {
     if (!documents.length) return []

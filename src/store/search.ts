@@ -26,6 +26,12 @@ export interface SearchOptions {
   rerank?: boolean
   /** Искать и по удалённому коду из истории git (§21). По умолчанию нет. */
   includeDeleted?: boolean
+  /**
+   * Падать, если реранкер недоступен, вместо тихого возврата к порядку эмбеддера.
+   * Нужно приёмке: для пользователя деградация лучше отказа, а для аттестации
+   * наоборот — измеренной оказалась бы не та система.
+   */
+  strictRerank?: boolean
 }
 
 interface Row {
@@ -245,7 +251,9 @@ export async function search(opts: SearchOptions): Promise<SearchHit[]> {
     .map(({ h, s }) => ({ ...h, score: s }))
 
   const useRerank = opts.rerank ?? cfg.search.rerank.enabled
-  const reranked = useRerank ? await rerankHits(ranked, opts.query, priors) : ranked
+  const reranked = useRerank
+    ? await rerankHits(ranked, opts.query, priors, opts.strictRerank === true)
+    : ranked
 
   return diversify(reranked, k, maxPerFile)
 }
@@ -265,6 +273,7 @@ async function rerankHits(
   hits: SearchHit[],
   query: string,
   priors: ReturnType<typeof compilePriors>,
+  strict = false,
 ): Promise<SearchHit[]> {
   const cfg = loadConfig()
   const head = hits.slice(0, cfg.search.rerank.candidates)
@@ -277,7 +286,10 @@ async function rerankHits(
   const documents = head.map((h) => h.embedText ?? h.rawText)
 
   const scores = await new Reranker().score(query, documents)
-  if (!scores) return hits
+  if (!scores) {
+    if (strict) throw new Error('реранкер недоступен, а прогон требует продовой конфигурации')
+    return hits
+  }
 
   const rescored = head
     .map((h, i) => ({ ...h, score: scores[i]! * priors.apply(h) }))
