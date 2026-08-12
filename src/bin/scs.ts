@@ -301,11 +301,13 @@ program
 
     // Реранкер при загрузке ОС занимал бы 2+ ГБ видеопамяти на машине, за которой
     // никто не сидит. Индексации это не мешает: она обходится без него.
+    const SESSION_TARGET = 'graphical-session.target'
     const vars = {
       node: process.execPath,
       root,
       cudaLibs: findCudaLibs(root),
-      wantedBy: opts.boot ? 'graphical-session.target' : 'default.target',
+      wantedBy: opts.boot ? SESSION_TARGET : 'default.target',
+      sessionBinding: opts.boot ? SESSION_TARGET : undefined,
     }
 
     const target = join(homedir(), '.config', 'systemd', 'user')
@@ -331,7 +333,26 @@ program
     // при загрузке ОС, занимая видеопамять, — ровно то, ради чего затевался --boot.
     // Службы при этом не останавливаются: --now здесь не передаётся.
     sysctl('disable', ...UNITS)
-    sysctl('enable', '--now', ...UNITS)
+    sysctl('enable', ...UNITS)
+
+    // Запускаем сами, а не через `enable --now`: тот поднял бы реранкер
+    // независимо от того, есть ли графическая сессия. При установке по ssh
+    // на машине без сессии это заняло бы два гигабайта видеопамяти — как раз
+    // тот расход, которого режим --boot и должен избегать.
+    const sessionActive = (() => {
+      try {
+        execFileSync('systemctl', ['--user', 'is-active', '--quiet', SESSION_TARGET])
+        return true
+      } catch {
+        return false
+      }
+    })()
+
+    for (const name of UNITS) {
+      const sessionOnly = opts.boot && name === 'scs-rerank'
+      if (sessionOnly && !sessionActive) sysctl('stop', name)
+      else sysctl('start', name)
+    }
 
     if (opts.boot) {
       // Без linger пользовательский менеджер systemd стартует при первом входе

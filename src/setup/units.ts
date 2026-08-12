@@ -22,6 +22,25 @@ export interface UnitVars {
   cudaLibs: string[]
   /** Цель автозапуска реранкера: default.target или graphical-session.target. */
   wantedBy: string
+  /**
+   * Цель, вместе с которой реранкер обязан останавливаться (PartOf).
+   *
+   * Без неё привязка к сессии однобока: WantedBy юнит только ЗАПУСКАЕТ, а после
+   * выхода из системы он продолжает работать и держать видеопамять — то есть
+   * ровно то, ради чего затевался --boot, не происходит, и молча.
+   */
+  sessionBinding?: string
+}
+
+/**
+ * Значение для директив, которые systemd разбивает по пробелам (ExecStart,
+ * Environment). Проверено `systemd-analyze verify`: без кавычек путь с пробелом
+ * даёт «Command ... is not executable» и «Invalid environment assignment,
+ * ignoring» — второе особенно неприятно, потому что сервис при этом стартует
+ * и молча уходит на CPU.
+ */
+function sdQuote(value: string): string {
+  return `"${value.replaceAll('\\', '\\\\').replaceAll('"', '\\"')}"`
 }
 
 /**
@@ -58,14 +77,19 @@ export function findCudaLibs(root: string): string[] {
  */
 export function renderUnit(template: string, vars: UnitVars): string {
   const cudaEnv = vars.cudaLibs.length
-    ? `Environment=LD_LIBRARY_PATH=${vars.cudaLibs.join(':')}`
+    ? `Environment=${sdQuote(`LD_LIBRARY_PATH=${vars.cudaLibs.join(':')}`)}`
     : '# CUDA-библиотеки не найдены: реранкер пойдёт на CPU (в 20 раз медленнее).\n' +
       '# Исправляется так: npm run cuda:libs && scs setup'
 
   const out = template
-    .replaceAll('@NODE@', vars.node)
+    // ExecStart systemd разбивает по пробелам, поэтому путь к node — в кавычках.
+    .replaceAll('@NODE@', sdQuote(vars.node))
+    // А WorkingDirectory берёт значение целиком, и кавычки её ЛОМАЮТ:
+    // systemd-analyze на закавыченном пути отвечает «path is not absolute».
+    // Разные директивы — разные правила, общего экранирования тут нет.
     .replaceAll('@ROOT@', vars.root)
     .replaceAll('@CUDA_ENV@', cudaEnv)
+    .replaceAll('@SESSION_BINDING@', vars.sessionBinding ? `PartOf=${vars.sessionBinding}` : '')
     .replaceAll('@WANTED_BY@', vars.wantedBy)
 
   const left = out.match(/@[A-Z_]+@/g)

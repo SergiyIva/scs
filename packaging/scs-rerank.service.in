@@ -1,6 +1,10 @@
 [Unit]
 Description=scs — cross-encoder реранкер (§20)
 After=network.target
+# Останавливаться вместе с сессией (подставляется только в режиме --boot):
+# WantedBy юнит лишь запускает, и без этой строки реранкер пережил бы выход
+# из системы, продолжая держать видеопамять.
+@SESSION_BINDING@
 
 [Service]
 Type=simple
