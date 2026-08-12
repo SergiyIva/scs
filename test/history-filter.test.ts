@@ -135,19 +135,23 @@ test('include_history в поиске дублей возвращает прош
   const { rows } = await db().query<{ path: string; start_line: number }>(
     `SELECT l.path, min(l.start_line)::int AS start_line
        FROM chunk_locations l JOIN repos r ON r.id = l.repo_id
-      WHERE r.name = $1 AND l.path NOT LIKE $2
+      WHERE r.name = $1 AND l.path ~ '\\.tsx?$'
         AND EXISTS (
           SELECT 1 FROM chunk_locations d
-           WHERE d.repo_id = l.repo_id AND d.path LIKE $2
-             AND regexp_replace(d.path, '^' || $3 || '|\\.[jt]sx?$', '', 'g')
-               = regexp_replace(l.path, '\\.[jt]sx?$', '')
+           WHERE d.repo_id = l.repo_id AND d.path ~ ('^' || $2 || '.*\\.jsx?$')
+             -- Путь без префикса и расширения: живой x.ts и удалённый x.js.
+             -- Флаг 'g' здесь был бы ошибкой — он вырезает совпадения по всей
+             -- строке, и тогда под условие подходят любые одноимённые файлы
+             -- любых расширений, а проверка молча уезжает на другой случай.
+             AND regexp_replace(d.path, '^' || $2 || '(.*)\\.jsx?$', '\\1')
+               = regexp_replace(l.path, '\\.tsx?$', '')
         )
       GROUP BY l.path ORDER BY l.path LIMIT 1`,
-    [REPO, `${DELETED_PREFIX}%`, DELETED_PREFIX],
+    [REPO, DELETED_PREFIX],
   )
   const anchor = rows[0]
   if (!anchor) {
-    t.skip('в индексе нет файла с одноимённым предком в истории — проверять нечего')
+    t.skip('в индексе нет пары «живой .ts — удалённый .js» — проверять нечего')
     return
   }
   const hits = await findSimilar(REPO, anchor.path, anchor.start_line, 20, true, true)
