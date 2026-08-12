@@ -6,8 +6,8 @@ After=network.target
 
 [Service]
 Type=simple
-WorkingDirectory=%h/WebstormProjects/embedded-project
-ExecStart=/home/sergey/.nvm/versions/node/v22.22.0/bin/node dist/services/embed-ollama/server.js
+WorkingDirectory=@ROOT@
+ExecStart=@NODE@ dist/services/embed-ollama/server.js
 Restart=on-failure
 RestartSec=5
 Environment=NODE_ENV=production

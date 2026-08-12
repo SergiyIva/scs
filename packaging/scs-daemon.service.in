@@ -7,8 +7,8 @@ Wants=scs-embed.service
 
 [Service]
 Type=simple
-WorkingDirectory=%h/WebstormProjects/embedded-project
-ExecStart=/home/sergey/.nvm/versions/node/v22.22.0/bin/node dist/src/bin/scs-daemon.js
+WorkingDirectory=@ROOT@
+ExecStart=@NODE@ dist/src/bin/scs-daemon.js
 Restart=on-failure
 RestartSec=5
 StartLimitIntervalSec=300
