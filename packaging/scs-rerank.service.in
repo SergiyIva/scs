@@ -1,0 +1,29 @@
+[Unit]
+Description=scs — cross-encoder реранкер (§20)
+After=network.target
+# Останавливаться вместе с сессией (подставляется только в режиме --boot):
+# WantedBy юнит лишь запускает, и без этой строки реранкер пережил бы выход
+# из системы, продолжая держать видеопамять.
+@SESSION_BINDING@
+
+[Service]
+Type=simple
+WorkingDirectory=@ROOT@
+# LD_LIBRARY_PATH обязателен: onnxruntime-node собран под CUDA 12, а в системе
+# 13.2, поэтому runtime-библиотеки лежат в локальном venv (npm run cuda:libs).
+# Без него сервис поднимется на CPU и станет в двадцать раз медленнее — молча.
+# Пути подставляет `scs setup`, находя их в .venv-cuda: имя каталога содержит
+# версию python, а она у каждого своя.
+@CUDA_ENV@
+ExecStart=@NODE@ dist/services/rerank-onnx/server.js
+Restart=on-failure
+RestartSec=5
+# Загрузка модели на GPU занимает до полуминуты, и всё это время /health молчит.
+TimeoutStartSec=120
+
+[Install]
+# Подставляется setup'ом: default.target — подниматься всегда, вместе с остальными;
+# graphical-session.target — только на время сессии. Второе имеет смысл при
+# включённом linger: реранкер держит больше двух гигабайт видеопамяти, и занимать
+# их круглосуточно ради машины, за которой никто не сидит, незачем.
+WantedBy=@WANTED_BY@

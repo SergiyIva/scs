@@ -4,15 +4,18 @@ Description=scs — инкрементальная индексация кода
 # полезного, поэтому порядок задан явно.
 After=network.target scs-embed.service
 Wants=scs-embed.service
+# Ограничитель перезапусков живёт в [Unit], а не в [Service]: в [Service]
+# systemd его просто игнорирует («Unknown key»), и защита от бесконечного
+# цикла рестартов, ради которой строки и написаны, не действует.
+StartLimitIntervalSec=300
+StartLimitBurst=5
 
 [Service]
 Type=simple
-WorkingDirectory=%h/WebstormProjects/embedded-project
-ExecStart=/home/sergey/.nvm/versions/node/v22.22.0/bin/node dist/src/bin/scs-daemon.js
+WorkingDirectory=@ROOT@
+ExecStart=@NODE@ dist/src/bin/scs-daemon.js
 Restart=on-failure
 RestartSec=5
-StartLimitIntervalSec=300
-StartLimitBurst=5
 Environment=NODE_ENV=production
 
 [Install]

@@ -1,9 +1,9 @@
 import { readdirSync, readFileSync } from 'node:fs'
-import { dirname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { join } from 'node:path'
 import { db, tx } from './pool.js'
+import { packageRoot } from '../util/root.js'
 
-const migrationsDir = join(dirname(fileURLToPath(import.meta.url)), '..', '..', 'migrations')
+const migrationsDir = join(packageRoot(), 'migrations')
 
 /**
  * Применяет неприменённые миграции по возрастанию имени.
